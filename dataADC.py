@@ -77,7 +77,7 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
     
     # sync ADC and INS/Laser
     sync_ADC_INS(datamean,dataINS)
-    datamean['time']=datamean.TOW-datamean.TOW[0]
+    datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
     
     
     if savefile:
@@ -598,8 +598,9 @@ def get_t0(data,iStart=2):
 #%%  various functions
 
 
-def CheckCalibration(dataINS,datamean,Rx_ch=['ch1'],SPS=19200):
-    
+# def getCalConstants(datamean,caltimes,start,stop,off,on,ID):
+
+def getCalTimes(dataINS,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
     TOW0=get_TOW0(dataINS)
     # find start and stop   
     start=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==1)]-TOW0
@@ -607,6 +608,14 @@ def CheckCalibration(dataINS,datamean,Rx_ch=['ch1'],SPS=19200):
     off=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==0)]-TOW0
     on=dataINS.Cal.TOW[(dataINS.Cal.On==1)]-TOW0
     ID=dataINS.Cal.ID[(dataINS.Cal.On==1)]
+    
+    
+    off1=[]
+    on1=[]
+    ID1=[]
+    calQs=[]
+    calIs=[]
+    
     
     if len(start)==1 and len(stop)==1:
         print("One calibration point")
@@ -617,13 +626,49 @@ def CheckCalibration(dataINS,datamean,Rx_ch=['ch1'],SPS=19200):
         
     elif len(start)>1 and len(stop)>1 :
         print("Multiple calibrations")
-        
-        
+        off1=[]
+        on1=[]
+        for st,stp in zip(start,stop):
+            inds=(on.searchsorted(st),off.searchsorted(stp))
+            off1.append(off[inds[0]:inds[1]])
+            on1.append(on[inds[0]:inds[1]])
     else:
         print(" Can not find calibration starting point")
-        return
+        return    start,stop,off1,on1,ID1, calQs,calIs
     
-    for  st,stp,off2,on2,ID2 in zip(start,stop,off1,on1,ID1 ) :
+    print(start,stop,off1,on1,ID1)
+    
+    for  st,stp,off2,on2 in zip(start,stop,off1,on1 ):
+        Is=[]
+        Qs=[]
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+            lims=[datamean.time.searchsorted(st-t_int0),datamean.time.searchsorted(st-t_buf)]
+            lims2=[datamean.time.searchsorted(stp+t_buf),datamean.time.searchsorted(stp+t_int0)]
+            
+            
+            Is.append([(datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].mean() + datamean[f'I_Rx{j:d}'].iloc[lims2[0]:lims2[1]].mean() )/2])
+            Qs.append([(datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].mean() + datamean[f'Q_Rx{j:d}'].iloc[lims2[0]:lims2[1]].mean() )/2])
+            
+            
+            for a,b in zip(on2,off2):
+                lims=[datamean.time.searchsorted(b+t_buf),datamean.time.searchsorted(b-t_buf)]
+                Is[i].append([datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].mean()])
+                Qs[i].append([datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].mean()])
+
+            
+        calIs.append(Is)
+        calQs.append(Qs)
+            
+    return start,stop,off1,on1,ID1, calQs,calIs
+    
+
+
+def CheckCalibration(dataINS,datamean,Rx_ch=['ch1']):
+    
+    start,stop,off1,on1,ID1, calQs,calIs =getCalTimes(dataINS,datamean,Rx_ch=Rx_ch)
+    
+    for  j,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
         
         lims=[datamean.time.searchsorted(st-2),datamean.time.searchsorted(stp+2)]
         
@@ -635,10 +680,17 @@ def CheckCalibration(dataINS,datamean,Rx_ch=['ch1'],SPS=19200):
             ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]],'xb',label='Q Rx')
             ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]],'xg',label='I Rx')
             ylim=pl.gca().get_ylim()
+            xlim=pl.gca().get_xlim()
+            
             for t in off2:
                 pl.plot([t,t],ylim,'k--',)
             for t in on2:
                 pl.plot([t,t],ylim,'r--',)      
+            
+            for Q,I in zip(calQs[j][i],calIs[j][i]):
+                pl.plot(xlim,[Q,Q],'b--',)      
+                pl.plot(xlim,[I,I],'g--',)
+                
             ax.set_ylabel('Quadrature (-)')
             ax2.set_ylabel('InPhase (-)')
             ax.set_xlabel('time (s)')
