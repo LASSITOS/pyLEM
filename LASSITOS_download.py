@@ -2,18 +2,23 @@ import os
 import csv
 
 
-def main():  # Read the first sector of the first disk as example.
-    """Demo usage of function."""
+def main(path='./',justheader=0):  # Read the first sector of the first disk as example.
+    """
+    Optional path:  path where files are saved
+    
+    E.g:  
+    """
+        
     if os.name == "nt":
         # Windows based OS normally uses '\\.\physicaldriveX' for disk drive identification.
-        read_sector(r"\\.\physicaldrive1",0)
+        read_sector(r"\\.\physicaldrive1",0,path=path)
         print('done')
     else:
         # Linux based OS normally uses '/dev/diskX' for disk drive identification.
-        print(read_sector("/dev/disk0"))
+        print(read_sector("/dev/disk0"),path=path)
 
 
-def read_sector(disk, sector_no=0):
+def read_sector(disk, sector_no=0,path='./'):
     """Read a single sector of the specified disk.
     Keyword arguments:
     disk -- the physical ID of the disk to read.
@@ -50,6 +55,8 @@ def read_sector(disk, sector_no=0):
         fileSizes = []
 
         for file in range(SD_FilePtr):      # go throuth each file
+            
+            
             read = fp.read(12)      # read file name
             fName = read.decode()
             fileNames.append(fName.rstrip('\x00'))
@@ -76,7 +83,9 @@ def read_sector(disk, sector_no=0):
             # fp.seek(sAddress * 512)
 
         for file in range(SD_FilePtr):
-            with open('./'+fileNames[file]+'.csv', 'w', encoding='UTF8', newline='') as f:
+            
+            filepath=path+'ADC'+str(fileNames[file][:6])+'_'+str(fileNames[file][6:])+'.csv'
+            with open(filepath, 'w', encoding='UTF8', newline='') as f:
                 writer = csv.writer(f)
                 fp.seek(startAddress[file]*512)
                 for i in range(fileSizes[file]):
@@ -89,4 +98,18 @@ def read_sector(disk, sector_no=0):
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        # Print the arguments passed in from the command line
+        # print("Arguments passed in from the command line:")
+        kwargs = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
+        # Print the keyword arguments
+        if kwargs:
+           
+            # print("Keyword arguments passed in from the command line:")
+            for key, value in kwargs.items():
+                print(f"{key}: {value}")
+            main(**kwargs)
+        else:
+            main()
+    else:
+        main()

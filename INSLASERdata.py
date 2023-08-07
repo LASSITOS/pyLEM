@@ -94,7 +94,7 @@ class INSLASERdata:
     def loadData(self,correct_Laser=0,droplaserTow0=True):
         if not os.path.isfile(self.filepath) :
             print("File not found!!!")
-            raise FileNotFoundError()
+            raise FileNotFoundError('File: {:s}'.format(self.filepath))
         
         
         

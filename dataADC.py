@@ -136,7 +136,7 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
             pl.legend()
             pl.title(ch)
     
-    return datamean
+    return datamean, dataINS
 
 
 
@@ -600,7 +600,7 @@ def get_t0(data,iStart=2):
 
 # def getCalConstants(datamean,caltimes,start,stop,off,on,ID):
 
-def getCalTimes(dataINS,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
+def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
     TOW0=get_TOW0(dataINS)
     # find start and stop   
     start=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==1)]-TOW0
@@ -666,9 +666,9 @@ def getCalTimes(dataINS,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
 
 def CheckCalibration(dataINS,datamean,Rx_ch=['ch1']):
     
-    start,stop,off1,on1,ID1, calQs,calIs =getCalTimes(dataINS,datamean,Rx_ch=Rx_ch)
+    start,stop,off,on,ID, calQs,calIs =getCalTimes(dataINS,datamean,Rx_ch=Rx_ch)
     
-    for  j,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
+    for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
         
         lims=[datamean.time.searchsorted(st-2),datamean.time.searchsorted(stp+2)]
         
@@ -687,7 +687,7 @@ def CheckCalibration(dataINS,datamean,Rx_ch=['ch1']):
             for t in on2:
                 pl.plot([t,t],ylim,'r--',)      
             
-            for Q,I in zip(calQs[j][i],calIs[j][i]):
+            for Q,I in zip(calQs[k][i],calIs[k][i]):
                 pl.plot(xlim,[Q,Q],'b--',)      
                 pl.plot(xlim,[I,I],'g--',)
                 
@@ -698,7 +698,7 @@ def CheckCalibration(dataINS,datamean,Rx_ch=['ch1']):
             ax2.legend(loc=1)
             pl.title(ch)
     
-    
+    return start,stop,off,on,ID, calQs,calIs
     
 
 def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title=''):
