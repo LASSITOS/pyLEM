@@ -785,7 +785,9 @@ def plot_summary(data,extent,cmap=cm.batlow,heading=True):
         data.plot_mapOSM(z='TOW',extent=extent,ax=ax0, cmap=cmap  )
     except ValueError:
         print('Can not download map!! No internet??')
+    ax0.set_title(data.name.strip('.csv').strip('\\'))
         
+    
     ax1 = fig.add_subplot(spec[3:5, 0])
     ax1.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,
               [distance.distance((data.PINS1.lat[0],data.PINS1.lon[0]),(data.PINS1.lat[0],x)).m for x in data.PINS1.lon ],
