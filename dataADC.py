@@ -626,17 +626,18 @@ def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
         
     elif len(start)>1 and len(stop)>1 :
         print("Multiple calibrations")
-        off1=[]
-        on1=[]
+
         for st,stp in zip(start,stop):
             inds=(on.searchsorted(st),off.searchsorted(stp))
             off1.append(off[inds[0]:inds[1]])
             on1.append(on[inds[0]:inds[1]])
+            ID1.append(ID[inds[0]:inds[1]])
+
     else:
         print(" Can not find calibration starting point")
         return    start,stop,off1,on1,ID1, calQs,calIs
     
-    print(start,stop,off1,on1,ID1)
+    # print(start,stop,off1,on1,ID1)
     
     for  st,stp,off2,on2 in zip(start,stop,off1,on1 ):
         Is=[]
@@ -647,20 +648,23 @@ def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
             lims2=[datamean.time.searchsorted(stp+t_buf),datamean.time.searchsorted(stp+t_int0)]
             
             
-            Is.append([(datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].mean() + datamean[f'I_Rx{j:d}'].iloc[lims2[0]:lims2[1]].mean() )/2])
-            Qs.append([(datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].mean() + datamean[f'Q_Rx{j:d}'].iloc[lims2[0]:lims2[1]].mean() )/2])
-            
+            # Is.append([(datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].mean() + datamean[f'I_Rx{j:d}'].iloc[lims2[0]:lims2[1]].mean() )/2])
+            # Qs.append([(datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].mean() + datamean[f'Q_Rx{j:d}'].iloc[lims2[0]:lims2[1]].mean() )/2])
+            Is.append([(datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'I_Rx{j:d}'].iloc[lims2[0]:lims2[1]].median() )/2])
+            Qs.append([(datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'Q_Rx{j:d}'].iloc[lims2[0]:lims2[1]].median() )/2])
             
             for a,b in zip(on2,off2):
-                lims=[datamean.time.searchsorted(b+t_buf),datamean.time.searchsorted(b-t_buf)]
-                Is[i].append([datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].mean()])
-                Qs[i].append([datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].mean()])
+                lims=[datamean.time.searchsorted(a+t_buf),datamean.time.searchsorted(b-t_buf)]
+                # Is[i].append([datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].mean()])
+                # Qs[i].append([datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].mean()])
+                Is[i].append(datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].median())
+                Qs[i].append(datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].median())
 
             
         calIs.append(Is)
         calQs.append(Qs)
             
-    return start,stop,off1,on1,ID1, calQs,calIs
+    return start,stop,off1,on1,ID1, np.array(calQs),np.array(calIs)
     
 
 
@@ -679,24 +683,29 @@ def CheckCalibration(dataINS,datamean,Rx_ch=['ch1']):
             ax2=ax.twinx()
             ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]],'xb',label='Q Rx')
             ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]],'xg',label='I Rx')
-            ylim=pl.gca().get_ylim()
-            xlim=pl.gca().get_xlim()
+            ylim=ax.get_ylim()
+            ylim2=ax2.get_ylim()
+            xlim=ax.get_xlim()
             
             for t in off2:
-                pl.plot([t,t],ylim,'k--',)
+                ax.plot([t,t],ylim,'k--',)
             for t in on2:
-                pl.plot([t,t],ylim,'r--',)      
+                ax.plot([t,t],ylim,'r--',)      
             
-            for Q,I in zip(calQs[k][i],calIs[k][i]):
-                pl.plot(xlim,[Q,Q],'b--',)      
-                pl.plot(xlim,[I,I],'g--',)
+            Q=calQs[k][i][0]
+            I=calIs[k][i][0]
+            ax.plot(xlim,[Q,Q],'b-.',)      
+            ax2.plot(xlim,[I,I],'g-.',)
+            for Q,I ,t1,t2 in zip(calQs[k][i][1:],calIs[k][i][1:],on2,off2):
+                ax.plot([t1-0.5,t2+0.5],[Q,Q],'b--',)      
+                ax2.plot([t1-0.5,t2+0.5],[I,I],'g--',)
                 
             ax.set_ylabel('Quadrature (-)')
             ax2.set_ylabel('InPhase (-)')
             ax.set_xlabel('time (s)')
             ax.legend(loc=2)
             ax2.legend(loc=1)
-            pl.title(ch)
+            pl.title(f'Cal{k+1:d}, {ch:s}' )
     
     return start,stop,off,on,ID, calQs,calIs
     
