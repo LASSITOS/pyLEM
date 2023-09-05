@@ -19,7 +19,7 @@ from scipy import optimize
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
+from scipy.optimize import curve_fit,least_squares
 
 from INSLASERdata import *
 
@@ -61,9 +61,10 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
                                                    flowpass=flowpass,window=window,keep_HF_data=False,
                                                    i_Tx=int(Tx_ch[2:]),
                                                    **kwargs)    
-    
+    params={}
+    params['f']=f
     print(f'Freq: {f:.2f} Hz')
-    print(f'Phase: {phase0:.2f} rad')
+    print(f'Phase lockIn: {phase0:.2f} rad')
     
     tx=int(Tx_ch[2:])
     columns=[]
@@ -82,28 +83,28 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
     
     if savefile:
         # write file header
-        f=open(fileOutput,'w')
+        file=open(fileOutput,'w')
         
-        f.write("# Signal extracted with LockIn form raw data\n")
-        f.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),version))
-        f.write("# Freqeuncy LockIn: {:} Hz\n".format(f))
-        f.write("# Phase LockIn: {:}\n".format(phase0))
-        f.write("# SPS: {:}\n\n".format(SPS))
-        f.write("# Frequency low pass: {:}\n".format(flowpass))
-        f.write("# Averaging window size: {:}\n".format(window))
-        f.write("# TxChannel: {:}\n".format(Tx_ch))
-        f.write("# Rx channels: {:}\n".format(str(Rx_ch)))
+        file.write("# Signal extracted with LockIn form raw data\n")
+        file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),version))
+        file.write("# Freqeuncy LockIn: {:} Hz\n".format(f))
+        file.write("# Phase LockIn: {:}\n".format(phase0))
+        file.write("# SPS: {:}\n\n".format(SPS))
+        file.write("# Frequency low pass: {:}\n".format(flowpass))
+        file.write("# Averaging window size: {:}\n".format(window))
+        file.write("# TxChannel: {:}\n".format(Tx_ch))
+        file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
         if i_cal!=[]:
-            f.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
+            file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
             for i,ch in enumerate(Rx_ch):
-                f.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,A0[i],i+1,phase0[i]))
+                file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,A0[i],i+1,phase0[i]))
         else:
-            f.write("# No calibration")
+            file.write("# No calibration")
             
-        f.write("#\n")
-        f.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
-        f.write("##\n")
-        f.close()
+        file.write("#\n")
+        file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
+        file.write("##\n")
+        file.close()
         
         # columns to save
         columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
@@ -136,7 +137,7 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
             pl.legend()
             pl.title(ch)
     
-    return datamean, dataINS
+    return datamean, dataINS,params
 
 
 
@@ -243,28 +244,28 @@ def LockInADCrawfile(path,name, Tx_ch='ch2', Rx_ch=['ch1'],
  
     
     # write file header
-    f=open(savefile,'w')
+    file=open(savefile,'w')
     
-    f.write("# Signal extracted with LockIn form raw data\n")
-    f.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),version))
-    f.write("# Freqeuncy LockIn: {:} Hz\n".format(freq))
-    f.write("# Phase LockIn: {:}\n".format(phase0))
-    f.write("# SPS: {:}\n\n".format(SPS))
-    f.write("# Frequency low pass: {:}\n".format(flowpass))
-    f.write("# Averaging window size: {:}\n".format(window))
-    f.write("# TxChannel: {:}\n".format(Tx_ch))
-    f.write("# Rx channels: {:}\n".format(str(Rx_ch)))
+    file.write("# Signal extracted with LockIn form raw data\n")
+    file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),version))
+    file.write("# Freqeuncy LockIn: {:} Hz\n".format(freq))
+    file.write("# Phase LockIn: {:}\n".format(phase0))
+    file.write("# SPS: {:}\n\n".format(SPS))
+    file.write("# Frequency low pass: {:}\n".format(flowpass))
+    file.write("# Averaging window size: {:}\n".format(window))
+    file.write("# TxChannel: {:}\n".format(Tx_ch))
+    file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
     if i_cal!=[]:
-        f.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
+        file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
         for i,ch in enumerate(Rx_ch):
-            f.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,A0[i],i+1,phase0[i]))
+            file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,A0[i],i+1,phase0[i]))
     else:
-        f.write("# No calibration")
+        file.write("# No calibration")
         
-    f.write("#\n")
-    f.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
-    f.write("##\n")
-    f.close()
+    file.write("#\n")
+    file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
+    file.write("##\n")
+    file.close()
     
     # columns to save
     columns+=[ 'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #'t', 'TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  'signQ', 'TempLaser',
@@ -665,12 +666,171 @@ def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
         calQs.append(Qs)
             
     return start,stop,off1,on1,ID1, np.array(calQs),np.array(calIs)
+
+
+def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.36,11.18,11.44])*1e-3,Ac= 0.04**2*np.pi,Nc= 32,dR= 1.92 ,dB= 0.56 ,dC=1.92-0.225):    
+    """   
+    Calculate the theoretical magnitude of the normalized secondary effect generated by calibration coil. See notes for formulas and derivation.
+    
+    Parameters
+    ----------
+    f : float
+        Frequency in Hz.
+    Rs : np.array, optional
+        Resistance of LR circuite for each state. The default is np.array([79.95,427.7,623,288.3]).
+    Ls : np.array, optional
+        Inductance of LR calibration circuit for each state. The default is np.array([11.48,11.36,11.18,11.44])*1e-3.
+    Ac : float, optional
+        Area of calibration coil (m**2) . The default is 0.04**2*np.pi.
+    Nc : float, optional
+        Turns of calibration coil. The default is 32.
+    dR : float, optional
+        Distance Transmitter reciver coil (m). The default is 1.92.
+    dB : float, optional
+        Distance transmitter bucking coil (m). The default is 0.56.
+    dC : float, optional
+        Distance transmitter calibration coil (m). The default is 1.92-0.225.
+
+    Returns
+    -------
+    Z,ZI,ZQ,magZ
+        Normalized secondary field Z, inphase, and quadrature of Z,Magnitude of Z
+
+    """
+    mu0= 1.2566e-6 # Vacuum permeability(N/A**2)
+
+    gc=4*np.pi/3*mu0*Ac**2*Nc**2  # gain term due to coil size and turns
+    Cd=1/dC**3*((dR/(dR-dC))**3-(dB/(dC-dB))**3 )  # coil distances therm
+
+    Rs=np.array([79.95,427.7,623,288.3])
+    Ls=np.array([11.48,11.36,11.18,11.44])*1e-3
+    omega=f*2*np.pi
+
+
+    def funCRL(R,L,omega):
+        """
+        effect 
+        """
+        denom=R**2+(omega*L)**2
+        I=omega**2*L/denom
+        Q=omega*R/denom
+        return I,Q
+
+
+    ZI,ZQ=funCRL(Rs,Ls,omega)
+    ZI=ZI*gc*Cd
+    ZQ=ZQ*gc*Cd
+    magZ=np.sqrt(ZI**2+ZQ**2)
+    Z=ZI+1j*ZQ
+    return Z,ZI,ZQ,magZ
+    
+def  fitCalibrationParams(calQ,calI,f,plot=False):
+    """
+    Fit calibration parameters to measured secondary signal produced by calibration coil.  Gain g, and phase phi.
+
+    Parameters
+    ----------
+    calQ : TYPE
+        DESCRIPTION.
+    calI : TYPE
+        DESCRIPTION.
+    f : TYPE
+        DESCRIPTION.
+    plot : TYPE, optional
+        DESCRIPTION. The default is False.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    """
+    
+    # get differences from 
+    
+    calZ=np.sqrt(calI**2+calQ**2)
+    
+    Z,ZI,ZQ,magZ=refCalibration(f)
     
 
+    # Sample data
+    x = calQ*1j+calI
+    
+    # Define transformation function
+    def trans(X, g, phi):
+        return g*X*np.exp(phi*1j)
 
-def CheckCalibration(dataINS,datamean,Rx_ch=['ch1']):
+    # lenar fit of magnitude of Z fit
+    def linFit2(X, g):    
+         return g*X
+
+    params2, covariance2 = curve_fit(linFit2, calZ, magZ,p0=[1],bounds=([0],[1e16]))
+
+
+    # Get g and phi with least squares fit
+    def resFun(par):
+        g,phi=par
+        Delta=Z-trans(x,g,phi)	
+        return np.sqrt(np.sum(np.real(Delta)**2+np.imag(Delta)**2))
+
+    def resFun3(phi):
+        Delta=Z-trans(x,params2[0],phi)	
+        return np.sqrt(np.sum(np.real(Delta)**2+np.imag(Delta)**2))
+
+   
+    res =least_squares(resFun, (params2[0],0), bounds=([0, -np.pi], [1000,np.pi]))
+    res3 =least_squares(resFun3, (0), bounds=([ -np.pi], [np.pi]))
+    
+    
+    
+    # # Print the fitting parameters
+    print(f'Fitted parameters: g = {res.x[0]:.6f}, phi = {res.x[1]:.4e}')
+    print(f'Fitted parameters 3: g = {params2[0]:.6f}, phi = {res3.x[0]:.4e}')
+
+
+    if plot:
+
+        #  Create a fit curve using the fitted parameters
+        Z_fit = trans(x, res.x[0], res.x[1])
+        Z_fit3 = trans(x, params2[0], res3.x[0])
+
+        # # Plot the data and the fit curve
+        pl.figure(figsize=(10,4))
+        ax=pl.subplot(131)
+        ax2=pl.subplot(132)
+        ax3=pl.subplot(133)
+        ax.scatter(calQ, ZQ, label='Data')
+        ax.plot(calQ, np.imag(Z_fit), 'rx', label=' Fit g and phi')
+        ax.plot(calQ, np.imag(Z_fit3), 'bx', label=' Fit magZ + fit phi')
+        ax.set_xlabel('Q Voltage')
+        ax.set_ylabel('quadrature(Z)')
+        ax2.scatter(calI, ZI, label='Data')
+        ax2.plot(calI, np.real(Z_fit), 'rx', label=' Fit g and phi')
+        ax2.plot(calI, np.real(Z_fit3), 'bx', label=' Fit magZ + fit phi')
+        ax2.set_xlabel('I Voltage')
+        ax2.set_ylabel('inphase(Z)')
+    
+        ax3.scatter(calZ, magZ, label='Data')
+        X=np.linspace(0,np.max(calZ),10)
+        ax3.plot(calZ, linFit2(calZ, params2[0]), 'kx', label='Fit magZ=a*x')
+        ax3.plot(X, linFit2(X, params2[0]), 'k:', label='Fitted data')
+        ax3.set_xlabel('Z Voltage')
+        ax3.set_ylabel('abs(Z)')
+        ax2.legend()
+        ax.legend()
+        ax3.legend()
+        pl.tight_layout()
+    
+    g=res.x[0]
+    phi=res.x[1]
+        
+        
+    return g,phi,[res,params2,res3]
+
+def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1']):
     
     start,stop,off,on,ID, calQs,calIs =getCalTimes(dataINS,datamean,Rx_ch=Rx_ch)
+    
     
     for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
         
@@ -707,7 +867,37 @@ def CheckCalibration(dataINS,datamean,Rx_ch=['ch1']):
             ax2.legend(loc=1)
             pl.title(f'Cal{k+1:d}, {ch:s}' )
     
-    return start,stop,off,on,ID, calQs,calIs
+            
+    
+    calQs2=[]
+    calIs2=[]
+    calQ0=[]
+    calI0=[]
+    gs=[]
+    phis=[]
+    
+    for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
+         calQs2.append([])
+         calIs2.append([])
+         calQ0.append([])
+         calI0.append([])
+         print(gs)
+         gs.append([])
+         phis.append([])
+         for i,ch in enumerate(Rx_ch):     
+            calQ=-(calQs[k,i,1:].transpose()-calQs[k,i,0])
+            calI=-(calIs[k,i,1:].transpose()-calIs[k,i,0])
+            g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
+            
+            calQs2[k].append(calQ)
+            calIs2[k].append(calI)
+            calQ0[k].append(calQs[k,i,0])
+            calI0[k].append(calIs[k,i,0])
+            gs[k].append(g)
+            phis[k].append(phi)
+    
+    
+    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop
     
 
 def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title=''):
