@@ -26,7 +26,7 @@ from INSLASERdata import *
 SPS= 19200
 ZoneInfo("UTC")
 
-sys.path.append(r'C:\Users\Laktop')
+# sys.path.append(r'C:\Users\Laktop')
 from emagpy_seaice import Problem
 from emagpy_seaice import invertHelper 
 
@@ -39,7 +39,8 @@ def loadDataLEM(path,name):
 
 def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
                      plot=False,savefile=True,
-                     window=1920,freq=0,phase0=0,SPS=19200,flowpass=50,i_cal=[],
+                     window=1920,freq=0,phase0=0,SPS=19200,flowpass=50,
+                     autoCal=True,i_autoCal=0,i_cal=[],
                      INSkargs={},
                      **kwargs):
  
@@ -63,6 +64,7 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
                                                    **kwargs)    
     params={}
     params['f']=f
+    params['phase0']=phase0
     print(f'Freq: {f:.2f} Hz')
     print(f'Phase lockIn: {phase0:.2f} rad')
     
@@ -72,13 +74,17 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
     # normalize Rx by Tx
     NormRxbyTx(datamean,Rx_ch,columns,tx=tx)
 
-    # Calibrate ADC
-    A0,phase0=Calibrate(datamean,Rx_ch,i_cal)
-    columns.extend(['Q_Rx1','I_Rx1','Q_Rx2','I_Rx2',])
     
     # sync ADC and INS/Laser
     sync_ADC_INS(datamean,dataINS)
     datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
+    
+    
+    # Calibrate ADC
+    CalParams=Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=autoCal,i_autoCal=i_autoCal,plot=plot)
+    for i,ch in enumerate(Rx_ch):
+        columns.extend([f'I_Rx{i+1:d}',f'Q_Rx{i+1:d}'])
+    params['CalParams']=CalParams
     
     
     if savefile:
@@ -97,9 +103,17 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
         if i_cal!=[]:
             file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
             for i,ch in enumerate(Rx_ch):
-                file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,A0[i],i+1,phase0[i]))
+                file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,CalParams['A0'][i],
+                                                                              i+1,CalParams['phase0'][i]))
         else:
-            file.write("# No calibration")
+            file.write("# No index calibration")
+        
+        if autoCal:
+            file.write("# auto calibration: start:{:.4f},  stop:{:.4f} \n".format(CalParams['start'],CalParams['start']))
+            for i,ch in enumerate(Rx_ch):
+                file.write("# g_Rx{:d}= {:f}, phi_Rx{:d}= {:f},\n".format(i+1,CalParams['g'][i],i+1,CalParams['phi'][i]))
+        else:
+            file.write("# No auto calibration")    
             
         file.write("#\n")
         file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
@@ -150,9 +164,12 @@ def NormRxbyTx(datamean,Rx_ch,columns,tx=2):
         columns.append(f'A_Rx{j:d}')
         columns.append(f'phase_Rx{j:d}')
         
-def Calibrate(datamean,Rx_ch,i_cal):
+def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=False):
     A0=[]
     phase0=[]
+    
+    CalParams={}
+    
     if i_cal!=[]:
         print('calibrating!')
         for i,ch in enumerate(Rx_ch):
@@ -168,7 +185,45 @@ def Calibrate(datamean,Rx_ch,i_cal):
             datamean[f'I_Rx{j:d}']=datamean[f'A_Rx{j:d}']*np.cos(datamean[f'phase_Rx{j:d}'])
             datamean[f'Q_Rx{j:d}']=datamean[f'A_Rx{j:d}']*np.sin(datamean[f'phase_Rx{j:d}'])
     
-    return A0,phase0
+    
+    # derive calibration parameters from automatic calibration using calibration coil
+    if autoCal:
+        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop=CheckCalibration(dataINS,datamean,params['f'],plot=plot)
+
+    
+        # Define transformation function
+        def trans(I,Q, g, phi):
+            X = Q*1j+I
+            Z=g*X*np.exp(phi*1j)
+            return np.real(Z), np.imag(Z)
+        
+        k=i_autoCal # define which  calibration cicle to use
+        
+        # transform Voltage data to normalized secondary field using derived calibration parameters 
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+            
+
+            I,Q=trans(datamean[f'I_Rx{j:d}']-calI0[i_autoCal][i],
+                      datamean[f'Q_Rx{j:d}']-calQ0[i_autoCal][i], 
+                      gs[i_autoCal][i], 
+                      phis[i_autoCal][i])
+            
+            datamean[f'I_Rx{j:d}']=I
+            datamean[f'Q_Rx{j:d}']=Q
+    
+    
+        CalParams['g']=np.array(gs)[i_autoCal,:]
+        CalParams['phi']=np.array(phis)[i_autoCal,:]
+        CalParams['Q0']=np.array(calQ0)[i_autoCal,:]
+        CalParams['I0']=np.array(calI0)[i_autoCal,:]
+        CalParams['start']=start[i_autoCal]
+        CalParams['stop']=stop[i_autoCal]
+    
+    CalParams['A0']=A0
+    CalParams['phase0']=phase0
+    
+    return CalParams
 
 
 
@@ -827,7 +882,7 @@ def  fitCalibrationParams(calQ,calI,f,plot=False):
         
     return g,phi,[res,params2,res3]
 
-def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1']):
+def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
     
     start,stop,off,on,ID, calQs,calIs =getCalTimes(dataINS,datamean,Rx_ch=Rx_ch)
     
