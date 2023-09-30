@@ -976,6 +976,23 @@ def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title=''):
     return plotraw2(data,title=title,starttime=start)
 
 
+def loadSectionRawData(file,start,stop,SPS=19200,units='seconds'):
+    
+    if units=='seconds':
+        i_start=int(start*SPS)
+        i_stop=int(stop*SPS)-i_start
+    elif units=='samples':
+        i_start=int(start)
+        i_stop=int(stop)-i_start
+        start=start/SPS
+        stop=stop/SPS
+    else:
+        raise ValueError('Units not recognised.') 
+        
+    return np.genfromtxt(file, dtype='int32' , delimiter=',', usecols=[0,1,2,3],
+                       converters={1:convert,2:convert,3:convert},
+                       max_rows=i_stop,skip_header=i_start)
+  
 
 
 def EMagPy_forwardmanualdata(depths,freqs,d_coils=1.929,plot=True):
@@ -1450,7 +1467,7 @@ def plotraw2(d,title='',starttime=0):
 
 
 
-def plotFFT(data,SPS,ax=0,scale='linear'):
+def plotFFT(data,SPS,ax=0,scale='linear',label='FFT Amp'):
     fft=np.abs(np.fft.rfft(data))/data.shape[0]
     fft[0]=0
     freq= np.fft.rfftfreq(data.shape[0], d=1.0/SPS)
@@ -1458,7 +1475,7 @@ def plotFFT(data,SPS,ax=0,scale='linear'):
         pl.figure()
         ax=pl.subplot(111)
     
-    ax.plot(freq,fft,label='FFT Amp')
+    ax.plot(freq,fft,label=label)
     ax.set_xlabel('frequency (Hz)')
     ax.set_ylabel('amp (-)')
     ax.legend()
