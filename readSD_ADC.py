@@ -92,14 +92,18 @@ def read_sector(disk, sector_no=0,path='./',listonly=0):
                 filepath=path+'/ADC'+str(fileNames[file][:6])+'_'+str(fileNames[file][6:])+'.csv'
                 print('reading File: ',fileNames[file])
                 print('Saving as: ',filepath)
-
-                with open(filepath, 'w', encoding='UTF8', newline='') as f:
-                    writer = csv.writer(f)
-                    fp.seek(startAddress[file]*512)
-                    for i in range(fileSizes[file]):
-                        read = fp.read(512)
-                        for j in range(0,32):
-                            writer.writerow([int.from_bytes(read[j*16:j*16+4], 'little'), read[j*16+4:j*16+8].hex(), read[j*16+8:j*16+12].hex(), read[j*16+12:j*16+16].hex()])
+                try:
+                    with open(filepath, 'w', encoding='UTF8', newline='') as f:
+                        writer = csv.writer(f)
+                        fp.seek(startAddress[file]*512)
+                        for i in range(fileSizes[file]):
+                            read = fp.read(512)
+                            for j in range(0,32):
+                                writer.writerow([int.from_bytes(read[j*16:j*16+4], 'little'), read[j*16+4:j*16+8].hex(), read[j*16+8:j*16+12].hex(), read[j*16+12:j*16+16].hex()])
+                except ValueError:
+                        print("VAlue error!!!!! Can't read:")
+                        print(fileNames[file])
+                        print("!!!!!")
         else:
             print("End of file list")
     
