@@ -42,14 +42,15 @@ class MSG_type:
         for i,k in enumerate(keys):
             setattr(self,k,np.array([l[i] for l in values]))
 
-_MSG_list_=['Laser','PINS1','PSTRB','PINS2','VBat','Temp','Cal']    # NMEA message list to parse
+_MSG_list_=['Laser','PINS1','PSTRB','PINS2','VBat','Temp','Cal','SDwrite']    # NMEA message list to parse
 _keyList_=[['h','signQ','T','TOW'],        
           ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'height','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
           ['GPSWeek','TOW','pin','count'],
           ['TOW','GPSWeek','insStatus','hdwStatus','QuatW','QuatX','QuatY','QuatZ','velX', 'velY', 'velZ','lat', 'lon', 'height'],
           ['V','TOW'],
           ['T','sensor','TOW'],
-          ['On','ID','TOW']
+          ['On','ID','TOW'],
+          ['TOW']
           ,]  # order matters!!
 
 
@@ -154,17 +155,23 @@ class INSLASERdata:
                 self.TempList.append(parseTemp(l)+(self.ToW,) ) 
             elif l.find('VBat')!=-1:
                 self.VBatList.append((parseVBat(l),self.ToW,) ) 
+            elif l.find('SDwrite')!=-1:
+                self.SDwriteList.append((self.ToW,))  
             
             else:
                 self.other.append(l)
         
         # drop  laser points with ToW=0        
-        if droplaserTow0:
-            for j,l in enumerate(self.LaserList):
-                if l[-1]!=0:
-                    break
-            self.LaserList=self.LaserList[j:]
-        
+        try:
+            if droplaserTow0:
+                for j,l in enumerate(self.LaserList):
+                    if l[-1]!=0:
+                        break
+                self.LaserList=self.LaserList[j:]
+        except UnboundLocalError: 
+            print(" UnboundLocalError:! Continuing withou dropping TOW=0")
+            
+            
         for msg in (self.MSG_list):
             setattr(self,msg,MSG_type(msg) )
             if len(getattr(self,msg+'List'))>0:

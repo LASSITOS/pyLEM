@@ -54,7 +54,13 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
     
     
     print('Load INS+Laser: ',file)
-    dataINS=INSLASERdata(fileLASER,name='\\INS'+name+'.csv',**INSkargs)
+    try:
+        dataINS=INSLASERdata(fileLASER,name='\\INS'+name+'.csv',**INSkargs)
+        noLASERfile=False
+    except FileNotFoundError:
+        print('Lase file: ',file, ' can not be loaded')
+        noLASERfile=True
+    
     
     print('Reading file: ',file)
     datamean, i_missing, gap,f,phase0=loadADCraw_singleFreq(file,
@@ -569,17 +575,21 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
 
 def sync_ADC_INS(datamean,dataINS):
     
-    TOW=datamean.index/SPS+get_TOW0(dataINS)
-    t = gps_datetime_np(dataINS.PINS1.GPSWeek[0],TOW)
-    datamean['t']=t
-    datamean['TOW']=TOW
-
-    # interpolate PINS1 data
-    interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'height',])
-    datamean.rename(columns={'height':'h_GPS'}, inplace=True)
-    interpolData(dataINS.Laser,datamean,['h_corr', 'roll', 'pitch','signQ', 'T'])
-    datamean.rename(columns={"T": "TempLaser",'h_corr':'h_Laser'}, inplace=True)
-
+    try:
+        TOW=datamean.index/SPS+get_TOW0(dataINS)
+        t = gps_datetime_np(dataINS.PINS1.GPSWeek[0],TOW)
+        datamean['t']=t
+        datamean['TOW']=TOW
+    
+        # interpolate PINS1 data
+        interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'height',])
+        datamean.rename(columns={'height':'h_GPS'}, inplace=True)
+        interpolData(dataINS.Laser,datamean,['h_corr', 'roll', 'pitch','signQ', 'T'])
+        datamean.rename(columns={"T": "TempLaser",'h_corr':'h_Laser'}, inplace=True)
+    except AttributeError: 
+         print("Can't find right INS data. Continue without them.")
+         datamean['TOW']=datamean.index/SPS
+        
 def interpolData(data,datamean,proplist):
     ind=np.searchsorted(data.TOW,datamean.TOW)
     ind[ind>len(data.TOW)-1]=len(data.TOW)-1
