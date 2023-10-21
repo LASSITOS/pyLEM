@@ -1205,9 +1205,11 @@ def correlate(d,f,SPS,phase=0,flowpass=100,lims=[]):
     I=signal.filtfilt(b,a,Icorr)
     Q=signal.filtfilt(b,a,Qcorr)
     
-    if len(lims)==0:
-        lims=[0,len(d)]
-    return Q[lims[0]:lims[1]],I[lims[0]:lims[1]]
+    if len(lims)!=0:
+        # lims=[0,len(d)]
+        return Q[lims[0]:lims[1]],I[lims[0]:lims[1]]
+    else:
+        return Q,I
     
 def getACorr(d,f,SPS,phase=0,flowpass=100,lims=[]):
     """
@@ -1288,9 +1290,12 @@ def corrRunWindow(d,f,SPS,window, dWindow=0,phase=0):
 
 
 
-def maxCorr_optimize(d,df=0.05,n=101,plot=False,flowpass=30):
+def maxCorr_optimize(d,df=0.05,n=101,plot=False,flowpass=30,f0=0):
     
-    Afft,f_fft=maxFFT(d)
+    if f0==0:
+        Afft,f_fft=maxFFT(d)
+    else:
+        f_fft=f0
     
     fun =lambda x: -getACorr_simple(d,x,SPS,phase=0,flowpass=flowpass)
     
@@ -1509,14 +1514,29 @@ def plotFFTsnippets(data,scale='log'):
 def getIndexBlocks(d,threshold=0.5,plot=0,window=50,detrend=False,threshold2=0.3,parameter='mean'):
     """
     Get start and end times of blocks when Tx was on. 
-    Input:
-    ------
-    d           array with data with strong signal. E.g. Tx voltage or current.
-    threshold    trhreshold for detecting Tx on 
-    
-    Output:
+
+    Parameters
+    ----------
+    d : TYPE
+        array with data with strong signal. E.g. Tx voltage or current..
+    threshold : TYPE, optional
+        trhreshold for detecting Tx on. The default is 0.3.
+    window : TYPE, optional
+        Window size (samples) for computing running mean or std. The default is 20.
+    parameter : TYPE, optional
+            Wich type of math to use on running window. The default is 'std'.
+    detrend : TYPE, optional
+       if yes remove trend . The default is False.
+    threshold2 : TYPE, optional
+        threshold used for second onset refinement. The default is 0.3.
+
+
+    Returns
     -------
-    t1,t2:  arrays with start and end times of data blockes
+    i_on,i_off : TYPE
+        arrays with start and end times of data blockes
+
+    
     
     """
     if window%2==0: # window size must be even  
@@ -1545,7 +1565,9 @@ def getIndexBlocks(d,threshold=0.5,plot=0,window=50,detrend=False,threshold2=0.3
         
     i_on0=np.where(np.diff(d_on)==1)[0]+w2
     i_off=np.where(np.diff(d_on)==-1)[0]+w2
-        
+    
+    if (i_on0[0]>i_off[0]):
+        i_off=i_off[1:]
     if len(i_on0)>len(i_off):
         i_on0=i_on0[:-1]
     elif len(i_on0)<len(i_off):
@@ -1579,6 +1601,70 @@ def getIndexBlocks(d,threshold=0.5,plot=0,window=50,detrend=False,threshold2=0.3
     
     return i_on,i_off
 
+
+
+def getIndexBlocks2(d,threshold=0.4,window=30,detrend=False,threshold2=0.3):
+    """
+    Get start and end times of blocks when Tx was on. 
+
+    Parameters
+    ----------
+    d : TYPE
+        array with data with strong signal. E.g. Tx voltage or current..
+    threshold : TYPE, optional
+        trhreshold for detecting Tx on. The default is 0.3.
+    window : TYPE, optional
+        Window size (samples) for computing running mean or std. The default is 20.
+    detrend : TYPE, optional
+       if yes remove trend . The default is False.
+    threshold2 : TYPE, optional
+        threshold used for second onset refinement. The default is 0.3.
+
+
+    Returns
+    -------
+    i_on,i_off : TYPE
+        arrays with start and end times of data blockes
+
+    
+    """
+    if window%2==0: # window size must be even  
+        window+=1
+    w2=int(window/2)
+
+    
+    if detrend:
+        d=np.array(d,dtype=float)
+        d[w2:-w2]-=np.sum(np.lib.stride_tricks.sliding_window_view(d, window), axis=-1)/window
+        d[:w2]=0
+        d[-w2:]=0
+        
+    
+    # numpy vectorized function with axis selection    
+    d_std=np.std(np.lib.stride_tricks.sliding_window_view(d, window), axis=-1)
+    std=d_std.mean()
+    
+    d_on= np.array(d_std/std>threshold,dtype=int)
+        
+    i_on0=np.where(np.diff(d_on)==1)[0]+w2
+    i_off=np.where(np.diff(d_on)==-1)[0]+w2
+    
+    if (i_on0[0]>i_off[0]):
+        i_off=i_off[1:]
+    if len(i_on0)>len(i_off):
+        i_on0=i_on0[:-1]
+    elif len(i_on0)<len(i_off):
+        i_off=i_off[1:]
+        
+    i_on=np.zeros_like(i_on0)
+    for j,i in enumerate(i_on0):
+        m2=np.std(d[i:i_off[j]])
+        try:
+            i_on[j]=i+np.where(d[i:i+window]/m2>threshold2)[0][0]-1
+        except IndexError:
+            i_on[j]=i+w2
+
+    return i_on,i_off
 
 
 
