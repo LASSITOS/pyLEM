@@ -37,15 +37,20 @@ def loadDataLEM(path,name):
     file=path+'/LEM'+name+'.csv'
     return pd.read_csv(file,header=15)
 
-def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
+def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                      plot=False,savefile=True,
                      window=1920,freq=0,phase0=0,SPS=19200,flowpass=50,
                      autoCal=True,i_autoCal=0,i_cal=[],
-                     INSkargs={},
+                     INSkargs={},MultiFreq=False,n_freqs=3,
                      **kwargs):
- 
     
-    version='v1.0'
+    
+    # Create dictionary containing parameters
+    params=locals()  # add all function arguments to dictionary
+    version='v1.2'
+    params['version']=version
+    
+    
     
     file=path+'/ADC'+name+r'.csv'
     fileLASER=path+'/INS'+name+'.csv'
@@ -63,83 +68,131 @@ def processDataLEM(path,name, Tx_ch='ch3', Rx_ch=['ch1','ch2'],
     
     
     print('Reading file: ',file)
-    datamean, i_missing, gap,f,phase0=loadADCraw_singleFreq(file,
-                                                   f=freq,phase0=phase0,SPS=SPS,
-                                                   flowpass=flowpass,window=window,keep_HF_data=False,
-                                                   i_Tx=int(Tx_ch[2:]),
-                                                   **kwargs)    
-    params={}
-    params['f']=f
-    params['phase0']=phase0
-    print(f'Freq: {f:.2f} Hz')
-    print(f'Phase lockIn: {phase0:.2f} rad')
-    
-    tx=int(Tx_ch[2:])
-    columns=[]
-    
-    # normalize Rx by Tx
-    NormRxbyTx(datamean,Rx_ch,columns,tx=tx)
-
-    
-    # sync ADC and INS/Laser
-    sync_ADC_INS(datamean,dataINS)
-    datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
-    
-    
-    # Calibrate ADC
-    CalParams=Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=autoCal,i_autoCal=i_autoCal,plot=plot)
-    for i,ch in enumerate(Rx_ch):
-        columns.extend([f'I_Rx{i+1:d}',f'Q_Rx{i+1:d}'])
-    params['CalParams']=CalParams
-    
-    
-    if savefile:
-        # write file header
-        file=open(fileOutput,'w')
+    if MultiFreq:
+        #----------------------------
+        #Multi frequency processing
+        #----------------------------
+        datamean, i_missing, gap,start_ind,freqs=loadADCraw_multiFreq(file,
+                                                               f=freq,phase0=phase0,SPS=SPS,
+                                                               flowpass=flowpass,window=window,
+                                                               i_Tx=int(Tx_ch[2:]),Rx_ch=Rx_ch,
+                                                               freqs=[1079.0228, 3900.1925, 8207.628],
+                                                               **kwargs)    
         
-        file.write("# Signal extracted with LockIn form raw data\n")
-        file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),version))
-        file.write("# Freqeuncy LockIn: {:} Hz\n".format(f))
-        file.write("# Phase LockIn: {:}\n".format(phase0))
-        file.write("# SPS: {:}\n\n".format(SPS))
-        file.write("# Frequency low pass: {:}\n".format(flowpass))
-        file.write("# Averaging window size: {:}\n".format(window))
-        file.write("# TxChannel: {:}\n".format(Tx_ch))
-        file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
-        if i_cal!=[]:
-            file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
-            for i,ch in enumerate(Rx_ch):
-                file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,CalParams['A0'][i],
-                                                                              i+1,CalParams['phase0'][i]))
-        else:
-            file.write("# No index calibration")
         
-        if autoCal:
-            file.write("# auto calibration: start:{:.4f},  stop:{:.4f} \n".format(CalParams['start'],CalParams['start']))
-            for i,ch in enumerate(Rx_ch):
-                file.write("# g_Rx{:d}= {:f}, phi_Rx{:d}= {:f},\n".format(i+1,CalParams['g'][i],i+1,CalParams['phi'][i]))
-        else:
-            file.write("# No auto calibration")    
+        
+        params['start_ind']=start_ind
+        params['flowpass']=flowpass
+        params['freqs']=freqs
+        
+        
+        # To do: add parameters to params
+        
+        tx=int(Tx_ch[2:])
+        columns=[]
+        
+        # normalize Rx by Tx
+        #----------------------------
+        NormRxbyTx_multi(datamean,Rx_ch,columns,n_freqs,tx=tx)
+        
+        
+        # sync ADC and INS/Laser
+        #----------------------------
+        sync_ADC_INS(datamean,dataINS)
+        datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
+        
+        
+        # Calibrate ADC
+        #----------------------------
+        CalParams=Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,n_freqs=n_freqs,autoCal=autoCal,i_autoCal=i_autoCal,plot=plot)
+        for i,ch in enumerate(Rx_ch):
+            columns.extend([f'I_Rx{i+1:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+            columns.extend([f'Q_Rx{i+1:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+        params['CalParams']=CalParams
+        
+        
+        if savefile:
+            # write file header
+            write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch)
             
-        file.write("#\n")
-        file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
-        file.write("##\n")
-        file.close()
-        
-        # columns to save
-        columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
-                  'signQ', 'TempLaser',
-                  'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #
-        
-        #save to file
+            
+            #save datamean to file
+            #----------------------------
+            # columns to save
+            columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
+                      'signQ', 'TempLaser' ] #
+            
+            for i in range(1,2+len(Rx_ch)):    
+                columns.extend([f'Q_ch{i:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+                columns.extend([f'I_ch{i:d}_f{k:d}' for k in range(1,len(freqs)+1)])
 
-        try:
-            datamean.to_csv(fileOutput,mode='a',index=True,header=True,columns=columns)
-        except Exception as e: 
-                print("error. Can't save data ")
-                print(e)
-                print('Columns to write:', columns)
-                print('Columns in datamean:', datamean.keys())
+            
+            try:
+                datamean.to_csv(fileOutput,mode='a',index=True,header=True,columns=columns)
+            except Exception as e: 
+                    print("error. Can't save data ")
+                    print(e)
+                    print('Columns to write:', columns)
+                    print('Columns in datamean:', datamean.keys())
+    
+    
+    else:  
+        #----------------------------
+        #single frequency processing
+        #----------------------------
+        datamean, i_missing, gap,f,phase0=loadADCraw_singleFreq(file,
+                                                               f=freq,phase0=phase0,SPS=SPS,
+                                                               flowpass=flowpass,window=window,keep_HF_data=False,
+                                                               i_Tx=int(Tx_ch[2:]),
+                                                               **kwargs)    
+        params={}
+        params['f']=f
+        params['phase0']=phase0
+        print(f'Freq: {f:.2f} Hz')
+        print(f'Phase lockIn: {phase0:.2f} rad')
+        
+        tx=int(Tx_ch[2:])
+        columns=[]
+        
+        # normalize Rx by Tx
+        #----------------------------
+        NormRxbyTx(datamean,Rx_ch,columns,tx=tx)
+    
+        
+        # sync ADC and INS/Laser
+        #----------------------------
+        sync_ADC_INS(datamean,dataINS)
+        datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
+        
+        
+        # Calibrate ADC
+        #----------------------------
+        CalParams=Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=autoCal,i_autoCal=i_autoCal,plot=plot)
+        for i,ch in enumerate(Rx_ch):
+            columns.extend([f'I_Rx{i+1:d}',f'Q_Rx{i+1:d}'])
+        params['CalParams']=CalParams
+        
+        
+        if savefile:
+            # write file header
+            write_file_header(fileOutput)
+            
+            
+            #save datamean to file
+            #----------------------------
+            # columns to save
+            columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
+                      'signQ', 'TempLaser',
+                      'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #
+            
+            
+            try:
+                datamean.to_csv(fileOutput,mode='a',index=True,header=True,columns=columns)
+            except Exception as e: 
+                    print("error. Can't save data ")
+                    print(e)
+                    print('Columns to write:', columns)
+                    print('Columns in datamean:', datamean.keys())
     
     
     if plot:
@@ -169,7 +222,23 @@ def NormRxbyTx(datamean,Rx_ch,columns,tx=2):
         datamean[f'phase_Rx{j:d}']=datamean[f'phase{rx:d}']-datamean[f'phase{tx:d}']   
         columns.append(f'A_Rx{j:d}')
         columns.append(f'phase_Rx{j:d}')
-        
+  
+def NormRxbyTx_multi(datamean,Rx_ch,columns,n_freqs,tx=2):
+    for i,ch in enumerate(Rx_ch):
+        rx=int(ch[2:])
+        j=i+1
+        for k in range(1,n_freqs+1):
+            
+            datamean[f'A_Rx{j:d}_f{k:d}']=datamean[f'A_Rx{j:d}_f{k:d}']/datamean[f'A_Tx_f{k:d}']
+            datamean[f'phase_Rx{j:d}_f{k:d}']=datamean[f'phase_Rx{j:d}_f{k:d}']-datamean[f'phase_Tx_f{k:d}']   
+            
+            columns.append(f'A_Rx{j:d}_f{k:d}')
+            columns.append(f'phase_Rx{j:d}_f{k:d}')      
+       
+        columns.append(f'A_Tx_f{k:d}')
+        columns.append(f'phase_Tx_f{k:d}')  
+    
+   
 def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=False):
     A0=[]
     phase0=[]
@@ -232,6 +301,146 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
     return CalParams
 
 
+
+def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,n_freqs=3,plot=False):
+    A0=[]
+    phase0=[]
+    
+    CalParams={}
+    
+    if i_cal!=[]:
+        print('calibrating!')
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+            for k in range(1,n_freqs+1):
+                A0.append(datamean[f'A_Rx{j:d}_f{k:d}'][i_cal].mean())
+                phase0.append(datamean[f'phase_Rx{j:d}_f{k:d}'][i_cal].mean())
+            
+                datamean[f'I_Rx{j:d}_f{k:d}']=datamean[f'A_Rx{j:d}_f{k:d}']/A0[i]*np.cos(datamean[f'phase_Rx{j:d}_f{k:d}']-phase0[i])-1
+                datamean[f'Q_Rx{j:d}_f{k:d}']=datamean[f'A_Rx{j:d}_f{k:d}']/A0[i]*np.sin(datamean[f'phase_Rx{j:d}_f{k:d}']-phase0[i])
+    else:
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+            for k in range(1,n_freqs+1):
+                datamean[f'I_Rx{j:d}_f{k:d}']=datamean[f'A_Rx{j:d}_f{k:d}']*np.cos(datamean[f'phase_Rx{j:d}_f{k:d}'])
+                datamean[f'Q_Rx{j:d}_f{k:d}']=datamean[f'A_Rx{j:d}_f{k:d}']*np.sin(datamean[f'phase_Rx{j:d}_f{k:d}'])
+    
+    
+    # derive calibration parameters from automatic calibration using calibration coil
+    if autoCal and dataINS.Cal.len>0:
+        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop=CheckCalibration_multiFreq(dataINS,datamean,params['freqs'],Rx_ch=Rx_ch,plot=plot)
+
+    
+        # Define transformation function
+        def trans(I,Q, g, phi):
+            X = Q*1j+I
+            Z=g*X*np.exp(phi*1j)
+            return np.real(Z), np.imag(Z)
+        
+        k=i_autoCal # define which  calibration cicle to use
+        
+        # transform Voltage data to normalized secondary field using derived calibration parameters 
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+            
+            for k in range(1,n_freqs+1):
+                I,Q=trans(datamean[f'I_Rx{j:d}_f{k:d}']-calI0[i_autoCal][i],
+                          datamean[f'Q_Rx{j:d}_f{k:d}']-calQ0[i_autoCal][i], 
+                          gs[i_autoCal][i], 
+                          phis[i_autoCal][i])
+                
+                datamean[f'I_Rx{j:d}_f{k:d}']=I
+                datamean[f'Q_Rx{j:d}_f{k:d}']=Q
+    
+    
+        CalParams['g']=np.array(gs)[i_autoCal,:]
+        CalParams['phi']=np.array(phis)[i_autoCal,:]
+        CalParams['Q0']=np.array(calQ0)[i_autoCal,:]
+        CalParams['I0']=np.array(calI0)[i_autoCal,:]
+        CalParams['start']=start[i_autoCal]
+        CalParams['stop']=stop[i_autoCal]
+    elif dataINS.Cal.len==0:
+        print('No calibration stamps found!  Autocalibration not possible!!!')
+        params['autoCal']=False
+    
+    CalParams['A0']=A0
+    CalParams['phase0']=phase0
+    
+    return CalParams
+
+
+
+def write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
+
+    file=open(fileOutput,'w')
+
+    file.write("# Signal extracted with LockIn form raw data\n")
+    file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),params['version']))
+    file.write("# Freqeuncies LockIn: {:} Hz\n".format(str(params['freqs'])))
+    file.write("# SPS: {:}\n\n".format(SPS))
+    file.write("# Frequency low pass: {:}\n".format(params['flowpass']))
+    file.write("# TxChannel: {:}\n".format(Tx_ch))
+    file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
+    
+    CalParams=params['CalParams']
+    if params['i_cal']!=[]:
+        file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
+        for i,ch in enumerate(Rx_ch):
+            file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,CalParams['A0'][i],
+                                                                          i+1,CalParams['phase0'][i]))
+    else:
+        file.write("# No index calibration")
+    
+    if params['autoCal']:
+        file.write("# auto calibration: start:{:.4f},  stop:{:.4f} \n".format(CalParams['start'],CalParams['start']))
+        for i,ch in enumerate(Rx_ch):
+            for k in range(1,n_freqs+1):
+                file.write("#\t g_Rx{0:d}_f{1:d}= {2:f}, phi_Rx{0:d}_f{1:d}= {3:f},\n".format(i+1,k,CalParams['g'][i,k-1],CalParams['phi'][i,k-1]))
+    else:
+        file.write("# No auto calibration")    
+        
+    file.write("#\n")
+    file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
+    file.write("##\n")
+    file.close()
+
+
+
+
+def write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
+
+    file=open(fileOutput,'w')
+
+    file.write("# Signal extracted with LockIn form raw data\n")
+    file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),params['version']))
+    file.write("# Freqeuncy LockIn: {:} Hz\n".format(params['f']))
+    file.write("# Phase LockIn: {:}\n".format(params['phase0']))
+    file.write("# SPS: {:}\n\n".format(params['SPS']))
+    file.write("# Frequency low pass: {:}\n".format(params['flowpass']))
+    file.write("# Averaging window size: {:}\n".format(params['window']))
+    file.write("# TxChannel: {:}\n".format(Tx_ch))
+    file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
+    
+    CalParams=params['CalParams']
+    if params['i_cal']!=[]:
+        file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
+        for i,ch in enumerate(Rx_ch):
+            file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,CalParams['A0'][i],
+                                                                          i+1,CalParams['phase0'][i]))
+    else:
+        file.write("# No index calibration")
+    
+    if params['autoCal']:
+        file.write("# auto calibration: start:{:.4f},  stop:{:.4f} \n".format(CalParams['start'],CalParams['start']))
+        for i,ch in enumerate(Rx_ch):
+            file.write("# g_Rx{:d}= {:f}, phi_Rx{:d}= {:f},\n".format(i+1,CalParams['g'][i],i+1,CalParams['phi'][i]))
+    else:
+        file.write("# No auto calibration")    
+        
+    file.write("#\n")
+    file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
+    file.write("##\n")
+    file.close()
 
 def LockInADCrawfile(path,name, Tx_ch='ch2', Rx_ch=['ch1'],
                      plot=False,
@@ -393,20 +602,54 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
                           findFreq=True,i_Tx=3,i_blok=[],
                           **kwargs):
     """
-    Read raw data file and extract signal over LockIn with lowpass filter. Average with running window.  
-    
-    Input:  
+    Read raw data file in blocks and extract signal over LockIn with lowpass filter. Single frequency. 
+
+    Parameters
+    ----------
+    file : string
+        path to file containing rawdata.
+    window : TYPE, optional
+        DESCRIPTION. The default is 1920.
+    f : TYPE, optional
+        DESCRIPTION. The default is 0.
+    phase0 : TYPE, optional
+        DESCRIPTION. The default is 0.
+    SPS : TYPE, optional
+        DESCRIPTION. The default is 19200.
+    flowpass : TYPE, optional
+        DESCRIPTION. The default is 50.
+    chunksize : TYPE, optional
+        DESCRIPTION. The default is 115200.
+    findFreq : TYPE, optional
+        DESCRIPTION. The default is True.
+    i_Tx : TYPE, optional
+        DESCRIPTION. The default is 3.
+    i_blok : TYPE, optional
+        DESCRIPTION. The default is [].
+    **kwargs : TYPE
+        DESCRIPTION.
+
+    Raises
     ------
-    file          path to file containing rawdata
+    ValueError
+        DESCRIPTION.
     
-    
-    Output:
-    -------
-    datamean 
-    i_missing
-    gap
-    data
-    
+        DESCRIPTION.
+
+
+     Returns
+     -------
+     datamean : TYPE
+         DESCRIPTION.
+     i_missing : TYPE
+         DESCRIPTION.
+     gap : TYPE
+         DESCRIPTION.
+     f : TYPE
+         DESCRIPTION.
+     phase0 : TYPE
+         DESCRIPTION.
+
     """
     #filter the signal using a low pass filter
     flowpass_norm=flowpass/(SPS/2)
@@ -417,7 +660,7 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
     gap=np.array([])
     
     f0=f
-    if findFreq:
+    if findFreq:   # upload a chunk of data and determine the frequency
         data=np.genfromtxt(file, dtype='int32' , delimiter=',', usecols=[0,1,2,3],
                            converters={1:convert,2:convert,3:convert},
                            max_rows=200000)
@@ -469,7 +712,7 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
         if plot:
             plotraw2(data[ia:ib,:])
         
-    
+    # load file in chunks as pandas dataframe
     df = pd.read_csv(file, 
                      chunksize=chunksize,
                      converters={1:convert,2:convert,3:convert}, 
@@ -477,6 +720,7 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
                      skiprows=1, 
                      index_col=0,
                      comment='#')
+    
     
     zQ1=signal.lfilter_zi(b,a)
     zI1=signal.lfilter_zi(b,a)
@@ -535,7 +779,7 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
         
         
         
-        i_rest=int(chunk2.index[-1]-(chunk2.index[-1]-chunk2.index[0])%window)
+        i_rest=int(chunk2.index[-1]-(chunk2.index[-1]-chunk2.index[0])%window) # get index of last window of running window 
         chunkrest=chunk.loc[i_rest:]
         
         
@@ -568,6 +812,250 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
         return datamean, i_missing, gap,f,phase0
 
 
+def loadADCraw_multiFreq(file,SPS=19200,
+                          flowpass=50,chunksize=115200,
+                          freqs=[1079.0228, 3900.1925, 8207.628],
+                          findFreq=False,
+                          i_Tx=3,Rx_ch=['ch1'],
+                          dT_spacing=0.3125,
+                          dT_lBlock=0.29,
+                          dT_quite=0.02,
+                          dT_raise=0.01, # time from signal start before signal can be used for lockin. Drop this data at beginning of each block
+                          t_start=0.122, # start time of data
+                          dt_check=0.02,
+                          winGetBlock=20,
+                          threshold=0.4,
+                          threshold2=0.3,
+                          **kwargs):
+    """
+    Read raw data file in blocks and extract signal over LockIn with lowpass filter. 
+    Multifrequency version. The chuncks with different frequencies are detected and Lockin is applied and mean calculated for each chunk.  
+
+    Parameters
+    ----------
+    file : string
+        path to file containing rawdata.
+    window : TYPE, optional
+        DESCRIPTION. The default is 1920.
+    f : TYPE, optional
+        DESCRIPTION. The default is 0.
+    phase0 : TYPE, optional
+        DESCRIPTION. The default is 0.
+    SPS : TYPE, optional
+        DESCRIPTION. The default is 19200.
+    flowpass : TYPE, optional
+        DESCRIPTION. The default is 50.
+    chunksize : TYPE, optional
+        DESCRIPTION. The default is 115200.
+    findFreq : TYPE, optional
+        DESCRIPTION. The default is True.
+    i_Tx : TYPE, optional
+        DESCRIPTION. The default is 3.
+    **kwargs : TYPE
+        DESCRIPTION.
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+    
+        DESCRIPTION.
+
+
+     Returns
+     -------
+     datamean : TYPE
+         DESCRIPTION.
+     i_missing : TYPE
+         DESCRIPTION.
+     gap : TYPE
+         DESCRIPTION.
+     f : TYPE
+         DESCRIPTION.
+     phase0 : TYPE
+         DESCRIPTION.
+
+    """
+    
+    
+    # SET CONSTANTS AND PROCESS INPUTS
+
+    n_ch=1+len(Rx_ch)
+    n_freq=len(freqs)
+    
+    
+    #setting up lowpass filter
+    flowpass_norm=flowpass/(SPS/2)
+    b,a=signal.butter(3,flowpass_norm,'low')
+    
+    
+    i_missing=np.array([])
+    gap=np.array([])
+    
+        
+    
+    df = pd.read_csv(file, 
+                     chunksize=chunksize,
+                     converters={1:convert,2:convert,3:convert}, 
+                     names=['ind','ch1','ch2','ch3' ],
+                     skiprows=1, 
+                     index_col=0,
+                     comment='#')
+    
+
+    
+    datamean=pd.DataFrame()
+    chunkrest=pd.DataFrame()
+    start_ind=np.array([])
+    tic = time.perf_counter()
+    time_LockIn=0
+    i_chunk=0
+   
+    
+    for chunk in df:
+        i_chunk+=1
+        print('Processing chunk number: {:d}'.format(i_chunk))
+        
+        
+        
+        
+        j,g=find_missing(chunk,pr=False)
+        i_missing=np.concatenate((i_missing,j))
+        gap=np.concatenate((gap,g))
+        try:
+            chunk2=chunk.reindex(np.arange(chunk.index[0],chunk.index[-1]),fill_value=0)  # fill missing values
+            chunk2=pd.concat([chunkrest,chunk2])
+        except MemoryError:
+           print('Chunck number: {:d}, Index A: {:d}  Index B: {:d} '.format(i_chunk,chunk.index[0],chunk.index[-1]))
+           print('i_missing:')
+           print(i_missing)
+           print('gap:')
+           print(gap)
+           raise
+            
+        
+        
+        # Get frequecy switch indixes (start) 
+        i1,i2=getIndexBlocks2(chunk2[f'ch{i_Tx:d}'],threshold=threshold,window=winGetBlock,detrend=False,threshold2=threshold2)
+        
+        di=dT_spacing*SPS*0.9   # minimum distance in sample number
+        N_drop=1
+        while(N_drop>0):
+            ii=np.where(np.diff(i1)<(di))[0] #find start times with difference smaller than 90% of dT_spacing
+            if len(ii)>0:
+                indices_to_remove=ii[np.where(np.diff(ii)>1)[0]]+1 # exclude indexes for consecutives elements  
+                indices_to_remove=np.append(indices_to_remove, ii[0]+1) # include first element found
+                # print(indices_to_remove)
+                i1 = np.delete(i1, indices_to_remove)
+                N_drop=len(indices_to_remove)
+            else:
+                N_drop=0
+        
+        
+        if (i1[-1]+int(dT_lBlock*SPS)) >=len(chunk2):  # drop last start index if stop index is not in chunk2
+            i1=i1[:-1]
+        
+        if (len(i1)%n_freq)>0:   # drop freq blocks of last incomplete frequency cycle if it is the case
+            i_st=i1[:-(len(i1)%n_freq)]
+        else:
+            i_st=i1
+        
+        i_sp=i_st+int(dT_lBlock*SPS)  # stop indices
+        N=int(np.ceil(len(i_st)/n_freq))
+        
+        
+
+        
+        # LockIn + filter
+        start_time = time.perf_counter() 
+        As=np.zeros([N,n_freq,n_ch])
+        Is=np.zeros_like(As)
+        Qs=np.zeros_like(As)
+        phis=np.zeros_like(As)
+        maxFreq=np.zeros([N,n_freq])
+        indices=np.zeros([N,n_freq],dtype=int)
+           
+        for   k,[a,b] in enumerate(zip(i_st,i_sp)):
+            i=int(k/n_freq)
+            j=int(k%n_freq)
+            # print(i,j)
+            a+=int(dT_raise*SPS)
+            # print([a,b])
+            # Tx
+            k=0
+            if findFreq:
+                f,A,phase,Q,I= maxCorr_optimize(chunk2[f'ch{i_Tx:d}'].iloc[a:b],df=0.05,n=101,plot=False,flowpass=flowpass,f0=freqs[j])
+            else:
+                f=freqs[j]
+                A,phase,Q,I=getACorr(chunk2[f'ch{i_Tx:d}'].iloc[a:b],f,SPS,phase=0,flowpass=100,lims=[])
+                
+            As[i,j,k]=A
+            Qs[i,j,k]=Q
+            Is[i,j,k]=I
+            phis[i,j,k]=phase
+            maxFreq[i,j]=f
+            indices[i,j]=chunk2.index[int((b+a)/2)]
+            
+            for r,Rx in enumerate(Rx_ch):
+                k=r+1
+                
+                # lock_in one block of data
+                A,phi,Q,I=getACorr(chunk2[Rx].iloc[a:b],f,SPS,phase=0,flowpass=100,lims=[])
+                As[i,j,k]=A
+                Qs[i,j,k]=Q
+                Is[i,j,k]=I
+                phis[i,j,k]=phi
+        time_LockIn+= time.perf_counter()-start_time 
+        # print('execution time for computing correlation: {:.5f} s'.format(time_LockIn)) 
+
+        
+
+        
+
+        try: 
+            i_rest=chunk2.index[b]
+        except Error:
+            # print('Processing chunk number: {:d}'.format(i_chunk))
+            print('b: {:d}'.format(b))
+            print('len(chunk2): {:d}, start:{:d}, stop:{:d} '.format(len(chunk2),chunk2.index[0],chunk2.index[-1]))
+            print(i_st)
+            print(i_sp)
+            i_rest=chunk2.index[-1]
+        chunkrest=chunk2.loc[i_rest:]+int(dT_quite*SPS)
+        start_ind=np.append(start_ind, chunk2.index[i_st])
+        
+        
+        
+        # add data to datamean
+        data=pd.DataFrame(data=As[:,:,0],index=indices[:,0], columns=[f'A_Tx_f{k:d}' for k in range(1,len(freqs)+1)])
+        data[[f'Q_ch{i_Tx:d}_f{k:d}' for k in range(1,len(freqs)+1)]]=Qs[:,:,0]
+        data[[f'I_ch{i_Tx:d}_f{k:d}' for k in range(1,len(freqs)+1)]]=Is[:,:,0]
+        data[[f'phase_Tx_f{k:d}' for k in range(1,len(freqs)+1)]]=phis[:,:,0]
+        data[[f'i_f{k:d}' for k in range(1,len(freqs)+1)]]=indices
+        data[[f'f{k:d}' for k in range(1,len(freqs)+1)]]= maxFreq
+        
+        for r,Rx in enumerate(Rx_ch):
+            r2=r+1
+            data[[f'Q_{Rx:s}_f{k:d}' for k in range(1,len(freqs)+1)]]=Qs[:,:,r2]
+            data[[f'I_{Rx:s}_f{k:d}' for k in range(1,len(freqs)+1)]]=Is[:,:,r2]
+            data[[f'A_Rx{r2:d}_f{k:d}' for k in range(1,len(freqs)+1)]]=As[:,:,r2]
+            data[[f'phase_Rx{r2:d}_f{k:d}' for k in range(1,len(freqs)+1)]]=phis[:,:,r2]
+            
+        if len(datamean)==0:
+            datamean=data
+        else:
+            datamean=pd.concat([datamean,data])
+            
+        # if i_chunk==2:
+        #     break
+
+
+    
+    toc = time.perf_counter()
+    print(f"Total time for Loading and processing data: {toc - tic:0.1f} seconds") 
+    print("Loaded and processed data in {:0.3f} seconds".format(time_LockIn)) 
+    time_LockIn
+    return datamean, i_missing, gap,start_ind,freqs
 
 
 
@@ -661,6 +1149,9 @@ def get_t0(data,iStart=2):
     
     return gps_datetime(data.PINS1.GPSWeek[0], TOW, leap_seconds=18)
 
+
+
+
 #%%  various functions
 
 
@@ -712,8 +1203,7 @@ def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
             j=i+1
             lims=[datamean.time.searchsorted(st-t_int0),datamean.time.searchsorted(st-t_buf)]
             lims2=[datamean.time.searchsorted(stp+t_buf),datamean.time.searchsorted(stp+t_int0)]
-            
-            
+             
             # Is.append([(datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].mean() + datamean[f'I_Rx{j:d}'].iloc[lims2[0]:lims2[1]].mean() )/2])
             # Qs.append([(datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].mean() + datamean[f'Q_Rx{j:d}'].iloc[lims2[0]:lims2[1]].mean() )/2])
             Is.append([(datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'I_Rx{j:d}'].iloc[lims2[0]:lims2[1]].median() )/2])
@@ -725,6 +1215,72 @@ def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
                 # Qs[i].append([datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].mean()])
                 Is[i].append(datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]].median())
                 Qs[i].append(datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]].median())
+
+            
+        calIs.append(Is)
+        calQs.append(Qs)
+            
+    return start,stop,off1,on1,ID1, np.array(calQs),np.array(calIs)
+
+def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
+    TOW0=get_TOW0(dataINS)
+    # find start and stop   
+    start=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==1)]-TOW0
+    stop=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==2)]-TOW0
+    off=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==0)]-TOW0
+    on=dataINS.Cal.TOW[(dataINS.Cal.On==1)]-TOW0
+    ID=dataINS.Cal.ID[(dataINS.Cal.On==1)]
+    
+    
+    off1=[]
+    on1=[]
+    ID1=[]
+    calQs=[]
+    calIs=[]
+    
+    
+    if len(start)==1 and len(stop)==1:
+        print("One calibration point")
+        
+        off1=[off]
+        on1=[on]
+        ID1=[ID]
+        
+    elif len(start)>1 and len(stop)>1 :
+        print("Multiple calibrations")
+
+        for st,stp in zip(start,stop):
+            inds=(on.searchsorted(st),off.searchsorted(stp))
+            off1.append(off[inds[0]:inds[1]])
+            on1.append(on[inds[0]:inds[1]])
+            ID1.append(ID[inds[0]:inds[1]])
+
+    else:
+        print(" Can not find calibration starting point")
+        return    start,stop,off1,on1,ID1, calQs,calIs
+    
+    # print(start,stop,off1,on1,ID1)
+    
+    for  st,stp,off2,on2 in zip(start,stop,off1,on1 ):
+        Is=[[]]
+        Qs=[[]]
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+
+            for k in range(1,n_freqs+1):
+                lims=[datamean.time.searchsorted(st-t_int0),datamean.time.searchsorted(st-t_buf)]
+                lims2=[datamean.time.searchsorted(stp+t_buf),datamean.time.searchsorted(stp+t_int0)]
+                
+                # get median value for free space 
+                Is[k-1].append([(datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims2[0]:lims2[1]].median() )/2])
+                Qs[k-1].append([(datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims2[0]:lims2[1]].median() )/2])
+                
+                for a,b in zip(on2,off2):
+                    lims=[datamean.time.searchsorted(a+t_buf),datamean.time.searchsorted(b-t_buf)]
+                    
+                    # get median value for free space 
+                    Is[k-1,i].append(datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median())
+                    Qs[k-1,i].append(datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median())
 
             
         calIs.append(Is)
@@ -767,8 +1323,6 @@ def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.
     gc=4*np.pi/3*mu0*Ac**2*Nc**2  # gain term due to coil size and turns
     Cd=1/dC**3*((dR/(dR-dC))**3-(dB/(dC-dB))**3 )  # coil distances therm
 
-    Rs=np.array([79.95,427.7,623,288.3])
-    Ls=np.array([11.48,11.36,11.18,11.44])*1e-3
     omega=f*2*np.pi
 
 
@@ -825,7 +1379,7 @@ def  fitCalibrationParams(calQ,calI,f,plot=False):
     def trans(X, g, phi):
         return g*X*np.exp(phi*1j)
 
-    # lenar fit of magnitude of Z fit
+    # linear fit of magnitude of Z fit
     def linFit2(X, g):    
          return g*X
 
@@ -896,41 +1450,41 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
     
     start,stop,off,on,ID, calQs,calIs =getCalTimes(dataINS,datamean,Rx_ch=Rx_ch)
     
-    
-    for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
-        
-        lims=[datamean.time.searchsorted(st-2),datamean.time.searchsorted(stp+2)]
-        
-        for i,ch in enumerate(Rx_ch):
-            j=i+1
-            pl.figure()
-            ax=pl.subplot(111)
-            ax2=ax.twinx()
-            ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]],'xb',label='Q Rx')
-            ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]],'xg',label='I Rx')
-            ylim=ax.get_ylim()
-            ylim2=ax2.get_ylim()
-            xlim=ax.get_xlim()
+    if plot:
+        for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
             
-            for t in off2:
-                ax.plot([t,t],ylim,'k--',)
-            for t in on2:
-                ax.plot([t,t],ylim,'r--',)      
+            lims=[datamean.time.searchsorted(st-2),datamean.time.searchsorted(stp+2)]
             
-            Q=calQs[k][i][0]
-            I=calIs[k][i][0]
-            ax.plot(xlim,[Q,Q],'b-.',)      
-            ax2.plot(xlim,[I,I],'g-.',)
-            for Q,I ,t1,t2 in zip(calQs[k][i][1:],calIs[k][i][1:],on2,off2):
-                ax.plot([t1-0.5,t2+0.5],[Q,Q],'b--',)      
-                ax2.plot([t1-0.5,t2+0.5],[I,I],'g--',)
+            for i,ch in enumerate(Rx_ch):
+                j=i+1
+                pl.figure()
+                ax=pl.subplot(111)
+                ax2=ax.twinx()
+                ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]],'x',label=f'Q Rx{j:d}')
+                ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]],'x',label=f'I Rx{j:d}')
+                ylim=ax.get_ylim()
+                ylim2=ax2.get_ylim()
+                xlim=ax.get_xlim()
                 
-            ax.set_ylabel('Quadrature (-)')
-            ax2.set_ylabel('InPhase (-)')
-            ax.set_xlabel('time (s)')
-            ax.legend(loc=2)
-            ax2.legend(loc=1)
-            pl.title(f'Cal{k+1:d}, {ch:s}' )
+                for t in off2:
+                    ax.plot([t,t],ylim,'k--',)
+                for t in on2:
+                    ax.plot([t,t],ylim,'r--',)      
+                
+                Q=calQs[k][i][0]
+                I=calIs[k][i][0]
+                ax.plot(xlim,[Q,Q],'b-.',)      
+                ax2.plot(xlim,[I,I],'g-.',)
+                for Q,I ,t1,t2 in zip(calQs[k][i][1:],calIs[k][i][1:],on2,off2):
+                    ax.plot([t1-0.5,t2+0.5],[Q,Q],'b--',)      
+                    ax2.plot([t1-0.5,t2+0.5],[I,I],'g--',)
+                    
+                ax.set_ylabel('Quadrature (-)')
+                ax2.set_ylabel('InPhase (-)')
+                ax.set_xlabel('time (s)')
+                ax.legend(loc=2)
+                ax2.legend(loc=1)
+                pl.title(f'Cal{k+1:d}, {ch:s}' )
     
             
     
@@ -950,7 +1504,7 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
          gs.append([])
          phis.append([])
          for i,ch in enumerate(Rx_ch):     
-            calQ=-(calQs[k,i,1:].transpose()-calQs[k,i,0])
+            calQ=-(calQs[k,i,r,1:].transpose()-calQs[k,i,0])
             calI=-(calIs[k,i,1:].transpose()-calIs[k,i,0])
             g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
             
@@ -964,6 +1518,83 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
     
     return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop
     
+
+def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
+    
+    start,stop,off,on,ID, calQs,calIs =getCalTimes_multi(dataINS,datamean,Rx_ch=Rx_ch)
+    
+    if plot:
+        for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
+            
+            lims=[datamean.time.searchsorted(st-2),datamean.time.searchsorted(stp+2)]
+            
+            for i,ch in enumerate(Rx_ch):
+                j=i+1
+                pl.figure()
+                ax=pl.subplot(111)
+                ax2=ax.twinx()
+                for k in range(1,n_freqs+1):
+                    ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]],'x',label=f'Q Rx{j:d}_f{k:d}')
+                    ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]],'+',label=f'I Rx{j:d}_f{k:d}')
+                ylim=ax.get_ylim()
+                ylim2=ax2.get_ylim()
+                xlim=ax.get_xlim()
+                
+                for t in off2:
+                    ax.plot([t,t],ylim,'k--',)
+                for t in on2:
+                    ax.plot([t,t],ylim,'r--',)      
+                
+                Q=calQs[k][i][0]
+                I=calIs[k][i][0]
+                ax.plot(xlim,[Q,Q],'b-.',)      
+                ax2.plot(xlim,[I,I],'g-.',)
+                for Q,I ,t1,t2 in zip(calQs[k][i][1:],calIs[k][i][1:],on2,off2):
+                    ax.plot([t1-0.5,t2+0.5],[Q,Q],'b--',)      
+                    ax2.plot([t1-0.5,t2+0.5],[I,I],'g--',)
+                    
+                ax.set_ylabel('Quadrature (-)')
+                ax2.set_ylabel('InPhase (-)')
+                ax.set_xlabel('time (s)')
+                ax.legend(loc=2)
+                ax2.legend(loc=1)
+                pl.title(f'Cal{k+1:d}, {ch:s}' )
+    
+            
+    
+    calQs2=[]
+    calIs2=[]
+    calQ0=[]
+    calI0=[]
+    gs=[]
+    phis=[]
+    
+    for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
+         calQs2.append([[]])
+         calIs2.append([[]])
+         calQ0.append([[]])
+         calI0.append([[]])
+         print(gs)
+         gs.append([[]])
+         phis.append([[]])
+         for i,ch in enumerate(Rx_ch):   
+            
+             for r,f in enumerate(freqs):
+                calQ=-(calQs[k,i,r,1:].transpose()-calQs[k,i,r,0])
+                calI=-(calIs[k,i,r,1:].transpose()-calIs[k,i,r,0])
+                g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
+                
+                calQs2[k,i].append(calQ)
+                calIs2[k,i].append(calI)
+                calQ0[k,i].append(calQs[k,i,r,0])
+                calI0[k,i].append(calIs[k,i,r,0])
+                gs[k,i].append(g)
+                phis[k,i].append(phi)
+    
+    
+    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop
+
+
 
 def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title=''):
     
