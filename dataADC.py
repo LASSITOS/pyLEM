@@ -38,7 +38,8 @@ def loadDataLEM(path,name):
     return pd.read_csv(file,header=15)
 
 def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
-                     plot=False,savefile=True,
+                   plot=False, plotINS=False,
+                   savefile=True,
                      window=1920,freq=0,phase0=0,SPS=19200,flowpass=50,
                      autoCal=True,i_autoCal=0,i_cal=[],
                      INSkargs={},MultiFreq=False,n_freqs=3,
@@ -195,10 +196,12 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                     print('Columns in datamean:', datamean.keys())
     
     
-    if plot:
+    if plotINS:
         
         plot_summary(dataINS,getextent(dataINS),heading=False)
-        
+    
+    if plot:
+    
         for i,ch in enumerate(Rx_ch):
             j=i+1
             pl.figure()
@@ -344,6 +347,11 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
             j=i+1
             
             for k in range(1,n_freqs+1):
+                print('i:',i)
+                print('j:',j)
+                print('k:',k)
+                print('calI0:',calI0)
+
                 I,Q=trans(datamean[f'I_Rx{j:d}_f{k:d}']-calI0[i_autoCal][i],
                           datamean[f'Q_Rx{j:d}_f{k:d}']-calQ0[i_autoCal][i], 
                           gs[i_autoCal][i], 
@@ -909,6 +917,7 @@ def loadADCraw_multiFreq(file,SPS=19200,
     start_ind=np.array([])
     tic = time.perf_counter()
     time_LockIn=0
+    time_indexes=0
     i_chunk=0
    
     
@@ -934,7 +943,7 @@ def loadADCraw_multiFreq(file,SPS=19200,
            raise
             
         
-        
+        start_time = time.perf_counter()
         # Get frequecy switch indixes (start) 
         i1,i2=getIndexBlocks2(chunk2[f'ch{i_Tx:d}'],threshold=threshold,window=winGetBlock,detrend=False,threshold2=threshold2)
         
@@ -950,7 +959,7 @@ def loadADCraw_multiFreq(file,SPS=19200,
                 N_drop=len(indices_to_remove)
             else:
                 N_drop=0
-        
+        time_indexes+= time.perf_counter()-start_time 
         
         if (i1[-1]+int(dT_lBlock*SPS)) >=len(chunk2):  # drop last start index if stop index is not in chunk2
             i1=i1[:-1]
@@ -1053,8 +1062,9 @@ def loadADCraw_multiFreq(file,SPS=19200,
     
     toc = time.perf_counter()
     print(f"Total time for Loading and processing data: {toc - tic:0.1f} seconds") 
-    print("Loaded and processed data in {:0.3f} seconds".format(time_LockIn)) 
-    time_LockIn
+    print("LockIn processing in {:0.3f} seconds".format(time_LockIn)) 
+    print("Getting indexes in {:0.3f} seconds".format(time_indexes)) 
+
     return datamean, i_missing, gap,start_ind,freqs
 
 
@@ -1222,7 +1232,7 @@ def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
             
     return start,stop,off1,on1,ID1, np.array(calQs),np.array(calIs)
 
-def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
+def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1'],n_freqs=3):
     TOW0=get_TOW0(dataINS)
     # find start and stop   
     start=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==1)]-TOW0
@@ -1277,7 +1287,10 @@ def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
                 
                 for a,b in zip(on2,off2):
                     lims=[datamean.time.searchsorted(a+t_buf),datamean.time.searchsorted(b-t_buf)]
-                    
+                    print(lims)
+                    print(k)
+                    print(i)
+                    print(k-1,i)
                     # get median value for free space 
                     Is[k-1,i].append(datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median())
                     Qs[k-1,i].append(datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median())
@@ -1504,7 +1517,7 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
          gs.append([])
          phis.append([])
          for i,ch in enumerate(Rx_ch):     
-            calQ=-(calQs[k,i,r,1:].transpose()-calQs[k,i,0])
+            calQ=-(calQs[k,i,1:].transpose()-calQs[k,i,0])
             calI=-(calIs[k,i,1:].transpose()-calIs[k,i,0])
             g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
             
@@ -1521,7 +1534,7 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
 
 def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
     
-    start,stop,off,on,ID, calQs,calIs =getCalTimes_multi(dataINS,datamean,Rx_ch=Rx_ch)
+    start,stop,off,on,ID, calQs,calIs =getCalTimes_multi(dataINS,datamean,Rx_ch=Rx_ch,n_freqs=len(freqs))
     
     if plot:
         for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
