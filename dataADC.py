@@ -114,7 +114,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         
         if savefile:
             # write file header
-            write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch)
+            write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch,len(freqs))
             
             
             #save datamean to file
@@ -201,7 +201,34 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         plot_summary(dataINS,getextent(dataINS),heading=False)
     
     if plot:
-    
+        
+        try:
+            plot_QandI(datamean,params,Rx_ch,MultiFreq)
+        except KeyError as e:
+            print("Can't find data in datamean to plot:") 
+            print(e)
+        
+    return datamean, dataINS,params
+
+
+
+def plot_QandI(datamean,params,Rx_ch,MultiFreq):
+    if MultiFreq:
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+            pl.figure()
+            n_freqs=len(params['freqs'])
+            for k,f in enumerate(params['freqs']):
+                ax=pl.subplot(n_freqs,1,k+1)
+            
+                ax.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}_f{k+1:d}'],'x',label='Q Rx')
+                ax.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}_f{k+1:d}'],'x',label='I Rx')
+                ax.plot(pl.gca().get_xlim(),[0,0],'k--',)
+                ax.set_ylabel('amplitude (-)')
+                ax.set_xlabel('time (s)')
+                ax.legend()
+                pl.title(f'{ch:s}, f{k+1:d}:{f:.1f}Hz')
+    else:
         for i,ch in enumerate(Rx_ch):
             j=i+1
             pl.figure()
@@ -212,10 +239,6 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
             pl.xlabel('time (s)')
             pl.legend()
             pl.title(ch)
-    
-    return datamean, dataINS,params
-
-
 
 def NormRxbyTx(datamean,Rx_ch,columns,tx=2):
     for i,ch in enumerate(Rx_ch):
@@ -347,24 +370,24 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
             j=i+1
             
             for k in range(1,n_freqs+1):
-                print('i:',i)
-                print('j:',j)
-                print('k:',k)
-                print('calI0:',calI0)
+                # print('i:',i)
+                # print('j:',j)
+                # print('k:',k)
+                # print('calI0:',calI0)
 
-                I,Q=trans(datamean[f'I_Rx{j:d}_f{k:d}']-calI0[i_autoCal][i],
-                          datamean[f'Q_Rx{j:d}_f{k:d}']-calQ0[i_autoCal][i], 
-                          gs[i_autoCal][i], 
-                          phis[i_autoCal][i])
+                I,Q=trans(datamean[f'I_Rx{j:d}_f{k:d}']-calI0[i_autoCal][i][k-1],
+                          datamean[f'Q_Rx{j:d}_f{k:d}']-calQ0[i_autoCal][i][k-1], 
+                          gs[i_autoCal][i][k-1], 
+                          phis[i_autoCal][i][k-1])
                 
                 datamean[f'I_Rx{j:d}_f{k:d}']=I
                 datamean[f'Q_Rx{j:d}_f{k:d}']=Q
     
     
-        CalParams['g']=np.array(gs)[i_autoCal,:]
-        CalParams['phi']=np.array(phis)[i_autoCal,:]
-        CalParams['Q0']=np.array(calQ0)[i_autoCal,:]
-        CalParams['I0']=np.array(calI0)[i_autoCal,:]
+        CalParams['g']=np.array(gs)[i_autoCal]
+        CalParams['phi']=np.array(phis)[i_autoCal]
+        CalParams['Q0']=np.array(calQ0)[i_autoCal]
+        CalParams['I0']=np.array(calI0)[i_autoCal]
         CalParams['start']=start[i_autoCal]
         CalParams['stop']=stop[i_autoCal]
     elif dataINS.Cal.len==0:
@@ -378,7 +401,7 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
 
 
 
-def write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
+def write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch,n_freqs):
 
     file=open(fileOutput,'w')
 
@@ -945,7 +968,7 @@ def loadADCraw_multiFreq(file,SPS=19200,
         
         start_time = time.perf_counter()
         # Get frequecy switch indixes (start) 
-        i1,i2=getIndexBlocks2(chunk2[f'ch{i_Tx:d}'],threshold=threshold,window=winGetBlock,detrend=False,threshold2=threshold2)
+        i1,i2=getIndexBlocks2(np.array(chunk2[f'ch{i_Tx:d}']),threshold=threshold,window=winGetBlock,detrend=False,threshold2=threshold2)
         
         di=dT_spacing*SPS*0.9   # minimum distance in sample number
         N_drop=1
@@ -1023,13 +1046,15 @@ def loadADCraw_multiFreq(file,SPS=19200,
 
         try: 
             i_rest=chunk2.index[b]
-        except Error:
+        except Exception as e:
             # print('Processing chunk number: {:d}'.format(i_chunk))
             print('b: {:d}'.format(b))
             print('len(chunk2): {:d}, start:{:d}, stop:{:d} '.format(len(chunk2),chunk2.index[0],chunk2.index[-1]))
             print(i_st)
             print(i_sp)
             i_rest=chunk2.index[-1]
+            print('i_rest: {:d} '.format(i_rest))
+            print(e)
         chunkrest=chunk2.loc[i_rest:]+int(dT_quite*SPS)
         start_ind=np.append(start_ind, chunk2.index[i_st])
         
@@ -1271,9 +1296,11 @@ def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1'],n_freqs=
     
     # print(start,stop,off1,on1,ID1)
     
-    for  st,stp,off2,on2 in zip(start,stop,off1,on1 ):
-        Is=[[]]
-        Qs=[[]]
+    Is=np.zeros([len(start),len(Rx_ch),n_freqs,len(on1[0])+1])
+    Qs=np.zeros_like(Is)
+    
+    for  r,[st,stp,off2,on2] in enumerate(zip(start,stop,off1,on1 )):
+        
         for i,ch in enumerate(Rx_ch):
             j=i+1
 
@@ -1281,25 +1308,27 @@ def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1'],n_freqs=
                 lims=[datamean.time.searchsorted(st-t_int0),datamean.time.searchsorted(st-t_buf)]
                 lims2=[datamean.time.searchsorted(stp+t_buf),datamean.time.searchsorted(stp+t_int0)]
                 
-                # get median value for free space 
-                Is[k-1].append([(datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims2[0]:lims2[1]].median() )/2])
-                Qs[k-1].append([(datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims2[0]:lims2[1]].median() )/2])
+                # print(r)
+                # print(i)
+                # print(k)
                 
-                for a,b in zip(on2,off2):
+                
+                # get median value for free space 
+                Is[r,i,k-1,0]=(datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims2[0]:lims2[1]].median() )/2
+                Qs[r,i,k-1,0]=(datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median() + datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims2[0]:lims2[1]].median() )/2
+                
+                for z,[a,b] in enumerate(zip(on2,off2)):
                     lims=[datamean.time.searchsorted(a+t_buf),datamean.time.searchsorted(b-t_buf)]
-                    print(lims)
-                    print(k)
-                    print(i)
-                    print(k-1,i)
+
+                    # print(z)
+                    
                     # get median value for free space 
-                    Is[k-1,i].append(datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median())
-                    Qs[k-1,i].append(datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median())
+                    Is[r,i,k-1,z+1]=datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median()
+                    Qs[r,i,k-1,z+1]=datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]].median()
 
             
-        calIs.append(Is)
-        calQs.append(Qs)
             
-    return start,stop,off1,on1,ID1, np.array(calQs),np.array(calIs)
+    return start,stop,off1,on1,ID1, Qs,Is
 
 
 def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.36,11.18,11.44])*1e-3,Ac= 0.04**2*np.pi,Nc= 32,dR= 1.92 ,dB= 0.56 ,dC=1.92-0.225):    
@@ -1533,8 +1562,8 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
     
 
 def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
-    
-    start,stop,off,on,ID, calQs,calIs =getCalTimes_multi(dataINS,datamean,Rx_ch=Rx_ch,n_freqs=len(freqs))
+    n_freqs=len(freqs)
+    start,stop,off,on,ID, calQs,calIs =getCalTimes_multi(dataINS,datamean,Rx_ch=Rx_ch,n_freqs=n_freqs)
     
     if plot:
         for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
@@ -1544,34 +1573,37 @@ def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
             for i,ch in enumerate(Rx_ch):
                 j=i+1
                 pl.figure()
-                ax=pl.subplot(111)
-                ax2=ax.twinx()
-                for k in range(1,n_freqs+1):
-                    ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]],'x',label=f'Q Rx{j:d}_f{k:d}')
-                    ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}_f{k:d}'].iloc[lims[0]:lims[1]],'+',label=f'I Rx{j:d}_f{k:d}')
-                ylim=ax.get_ylim()
-                ylim2=ax2.get_ylim()
-                xlim=ax.get_xlim()
                 
-                for t in off2:
-                    ax.plot([t,t],ylim,'k--',)
-                for t in on2:
-                    ax.plot([t,t],ylim,'r--',)      
-                
-                Q=calQs[k][i][0]
-                I=calIs[k][i][0]
-                ax.plot(xlim,[Q,Q],'b-.',)      
-                ax2.plot(xlim,[I,I],'g-.',)
-                for Q,I ,t1,t2 in zip(calQs[k][i][1:],calIs[k][i][1:],on2,off2):
-                    ax.plot([t1-0.5,t2+0.5],[Q,Q],'b--',)      
-                    ax2.plot([t1-0.5,t2+0.5],[I,I],'g--',)
+                for r in range(1,n_freqs+1):
+                    ax=pl.subplot(n_freqs,1,r)
+                    ax2=ax.twinx()
                     
-                ax.set_ylabel('Quadrature (-)')
-                ax2.set_ylabel('InPhase (-)')
-                ax.set_xlabel('time (s)')
-                ax.legend(loc=2)
-                ax2.legend(loc=1)
-                pl.title(f'Cal{k+1:d}, {ch:s}' )
+                    
+                    ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}_f{r:d}'].iloc[lims[0]:lims[1]],'x',label=f'Q Rx{j:d}_f{r:d}')
+                    ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}_f{r:d}'].iloc[lims[0]:lims[1]],'+',label=f'I Rx{j:d}_f{r:d}')
+                    ylim=ax.get_ylim()
+                    ylim2=ax2.get_ylim()
+                    xlim=ax.get_xlim()
+                    
+                    for t in off2:
+                        ax.plot([t,t],ylim,'k--',)
+                    for t in on2:
+                        ax.plot([t,t],ylim,'r--',)      
+                    
+                    Q=calQs[k,i,r-1,0]
+                    I=calIs[k,i,r-1,0]
+                    ax.plot(xlim,[Q,Q],'b-.',)      
+                    ax2.plot(xlim,[I,I],'g-.',)
+                    for Q,I ,t1,t2 in zip(calQs[k,i,r-1,1:],calIs[k,i,r-1,1:],on2,off2):
+                        ax.plot([t1-0.5,t2+0.5],[Q,Q],'b--',)      
+                        ax2.plot([t1-0.5,t2+0.5],[I,I],'g--',)
+                        
+                    ax.set_ylabel('Quadrature (-)')
+                    ax2.set_ylabel('InPhase (-)')
+                    ax.set_xlabel('time (s)')
+                    ax.legend(loc=2)
+                    ax2.legend(loc=1)
+                    pl.title(f'Cal{k+1:d}, {ch:s}, f{r:d}' )
     
             
     
@@ -1597,12 +1629,12 @@ def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
                 calI=-(calIs[k,i,r,1:].transpose()-calIs[k,i,r,0])
                 g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
                 
-                calQs2[k,i].append(calQ)
-                calIs2[k,i].append(calI)
-                calQ0[k,i].append(calQs[k,i,r,0])
-                calI0[k,i].append(calIs[k,i,r,0])
-                gs[k,i].append(g)
-                phis[k,i].append(phi)
+                calQs2[k][i].append(calQ)
+                calIs2[k][i].append(calI)
+                calQ0[k][i].append(calQs[k,i,r,0])
+                calI0[k][i].append(calIs[k,i,r,0])
+                gs[k][i].append(g)
+                phis[k][i].append(phi)
     
     
     return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop
