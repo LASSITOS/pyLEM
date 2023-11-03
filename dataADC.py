@@ -40,7 +40,7 @@ def loadDataLEM(path,name):
 def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                    plot=False, plotINS=False,
                    savefile=True,
-                     window=1920,freq=0,phase0=0,SPS=19200,flowpass=50,
+                     window=1920,freq=0,phase0=0,SPS=19200,flowpass=30,
                      autoCal=True,i_autoCal=0,i_cal=[],
                      INSkargs={},MultiFreq=False,n_freqs=3,
                      **kwargs):
@@ -2363,7 +2363,7 @@ def get_snippets(d,i_Tx=1,usecols=[1,2,3],plot=False,threshold=0.2,window=50,dt_
                 fmax[k,n]=f
             f=fmax[k,np.where(np.array(usecols)==i_Tx)[0][0]]
         else:
-            f,A,phase,Q,I= maxCorr(snip[:,i_Tx],df=0.025,n=201,plot=False)
+            f,A,phase,Q,I= maxCorr(snip[:,i_Tx],df=0.025,n=101,plot=False)
             fmax[k,np.where(np.array(usecols)==i_Tx)[0][0]]=f
             
         for n,c in enumerate(usecols):
