@@ -443,7 +443,7 @@ def write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
     file=open(fileOutput,'w')
 
     file.write("# Signal extracted with LockIn form raw data\n")
-    file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),params['version']))
+    file.write("# Processing date: {:} \tScript version: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),params['version']))
     file.write("# Freqeuncy LockIn: {:} Hz\n".format(params['f']))
     file.write("# Phase LockIn: {:}\n".format(params['phase0']))
     file.write("# SPS: {:}\n\n".format(params['SPS']))
@@ -1105,8 +1105,8 @@ def sync_ADC_INS(datamean,dataINS):
         datamean['TOW']=TOW
     
         # interpolate PINS1 data
-        interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'height',])
-        datamean.rename(columns={'height':'h_GPS'}, inplace=True)
+        interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'elevation',])
+        datamean.rename(columns={'elevation':'h_GPS'}, inplace=True)
         interpolData(dataINS.Laser,datamean,['h_corr', 'roll', 'pitch','signQ', 'T'])
         datamean.rename(columns={"T": "TempLaser",'h_corr':'h_Laser'}, inplace=True)
     except AttributeError: 
@@ -1183,6 +1183,14 @@ def get_t0(data,iStart=2):
     TOW=get_TOW0(data,iStart=iStart)
     
     return gps_datetime(data.PINS1.GPSWeek[0], TOW, leap_seconds=18)
+
+
+
+
+
+
+
+
 
 
 
@@ -1502,8 +1510,8 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
                 pl.figure()
                 ax=pl.subplot(111)
                 ax2=ax.twinx()
-                ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]],'x',label=f'Q Rx{j:d}')
-                ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]],'x',label=f'I Rx{j:d}')
+                ax.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'Q_Rx{j:d}'].iloc[lims[0]:lims[1]],'xb',label=f'Q Rx{j:d}')
+                ax2.plot(datamean.time.iloc[lims[0]:lims[1]],datamean[f'I_Rx{j:d}'].iloc[lims[0]:lims[1]],'+g',label=f'I Rx{j:d}')
                 ylim=ax.get_ylim()
                 ylim2=ax2.get_ylim()
                 xlim=ax.get_xlim()

@@ -8,6 +8,7 @@ Class and function used for handling data files with mixed UBX data from ublox G
 """
 
 import numpy as np
+import pandas as pd
 import re
 import math
 from datetime import datetime
@@ -21,6 +22,8 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import io
 from urllib.request import urlopen, Request
 from PIL import Image
+import gpxpy
+import datetime
 
 # %%  data class
 
@@ -44,9 +47,9 @@ class MSG_type:
 
 _MSG_list_=['Laser','PINS1','PSTRB','PINS2','VBat','Temp','Cal','SDwrite']    # NMEA message list to parse
 _keyList_=[['h','signQ','T','TOW'],        
-          ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'height','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
+          ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'elevation','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
           ['GPSWeek','TOW','pin','count'],
-          ['TOW','GPSWeek','insStatus','hdwStatus','QuatW','QuatX','QuatY','QuatZ','velX', 'velY', 'velZ','lat', 'lon', 'height'],
+          ['TOW','GPSWeek','insStatus','hdwStatus','QuatW','QuatX','QuatY','QuatZ','velX', 'velY', 'velZ','lat', 'lon', 'elevation'],
           ['V','TOW'],
           ['T','sensor','TOW'],
           ['On','ID','TOW'],
@@ -192,7 +195,7 @@ class INSLASERdata:
     
     def corr_h_laser(self):
         """
-        correct height with angles from INS
+        correct elevation with angles from INS
         """   
         try:
             i=self.PINS1.TOW.searchsorted( self.Laser.TOW)
@@ -213,7 +216,7 @@ class INSLASERdata:
            
         except Exception as e: 
             print(e)
-            print('Failed to correct Laser height')
+            print('Failed to correct Laser elevation')
             try:
                 self.Laser.h_corr=np.zeros_like(self.Laser.h)
             except AttributeError:
@@ -228,10 +231,10 @@ class INSLASERdata:
     def plot_elevation_time(self,ax=[],title=[]):
         plot_elevation_time(self,ax=ax,title=title)
 
-    def plot_longlat(self,z='height',ax=[],cmap= cm.batlow):
+    def plot_longlat(self,z='elevation',ax=[],cmap= cm.batlow):
         plot_longlat(self,z=z,ax=ax,cmap=cmap)
         
-    def plot_map(self,z='height',ax=[],cmap= cm.batlow):
+    def plot_map(self,z='elevation',ax=[],cmap= cm.batlow):
         plot_map(self,z=z,ax=ax,cmap=cmap)
 
     def plot_mapOSM(self,z='TOW',ax=[],cmap= cm.batlow,title=[],extent=[]):
@@ -294,7 +297,7 @@ def parseNMEA(l):
     """
     l: string with data
     
-    return height, signal quality, temperature 
+    return elevation, signal quality, temperature 
     
     """
     
@@ -325,7 +328,7 @@ def parseNMEAfloat(l):
     """
     l: string with data
     
-    return height, signal quality, temperature 
+    return elevation, signal quality, temperature 
     
     """
     
@@ -467,7 +470,7 @@ def parseLaser(l):
     l: string with data
     TOW: time of Week to append to message data
     
-    return height, signal quality, temperature 
+    return elevation, signal quality, temperature 
     
     """
     
@@ -618,7 +621,7 @@ def check_data(data):
     
         ax.plot(data.Laser.TOW-data.PINS1.TOW[0],data.Laser.h,'--xk',label='Laser')
         # ax.plot(data.Laser.TOW2-data.PINS1.TOW[0],data.Laser.h,'--ob',label='Laser, time2')
-        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]),data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
+        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]),data.PINS1.elevation -(data.PINS1.elevation[0] -data.Laser.h[0]),'+:r',label='GPS elevation')
         
         lines, labels = ax.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
@@ -736,7 +739,7 @@ def plot_elevation_time(data,ax=[],title=[]):
     d=data.PINS1
 
     
-    ax.plot((d.TOW-d.TOW[0]),d.height,'o-r',label='height')
+    ax.plot((d.TOW-d.TOW[0]),d.elevation,'o-r',label='elevation')
     ax.set_ylabel('elevation (m a.s.l.)')
     ax.set_xlabel('time (s)')
    
@@ -745,7 +748,7 @@ def plot_elevation_time(data,ax=[],title=[]):
     pl.tight_layout()
     
     
-def plot_longlat(data,z='height',ax=[],cmap= cm.batlow):
+def plot_longlat(data,z='elevation',ax=[],cmap= cm.batlow):
     if ax==[]:
         fig=pl.figure()
         ax=pl.subplot(111)
@@ -756,7 +759,7 @@ def plot_longlat(data,z='height',ax=[],cmap= cm.batlow):
     
     ax2=ax.twinx()    
     c=getattr(d,z)
-    if z=='height':
+    if z=='elevation':
         label='elevation (m a.s.l.)'
         c=c
     elif z=='TOW':
@@ -808,7 +811,7 @@ def plot_summary(data,extent,cmap=cm.batlow,heading=True):
     ax2 = fig.add_subplot(spec[5:7, 0],sharex = ax1)
     ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h, 'x:',label='original')
     ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h_corr, '+:k',label='corrected')
-    ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
+    ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.elevation -(data.PINS1.elevation[0] -data.Laser.h[0]),'+:r',label='GPS elevation')
     ax2.set_ylabel('h_laser (m)')
     ax2.set_xlim(ax1.get_xlim())
     ax2.legend()
@@ -836,7 +839,7 @@ def plot_summary2(data,extent,cmap=cm.batlow,heading=True):
     ax2 = fig.add_subplot(spec[5:7, 0],sharex = ax1)
     ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h, 'x:',label='original')
     ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h_corr, '+:k',label='corrected')
-    ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
+    ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.elevation -(data.PINS1.elevation[0] -data.Laser.h[0]),'+:r',label='GPS elevation')
     ax2.set_ylabel('h_laser (m)')
     ax2.set_xlim(ax1.get_xlim())
     ax2.legend()
@@ -854,7 +857,7 @@ def laser_correction(data,show_corr_angles=0,GPS_h=False,heading=False):
     ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h, 'x:',label='original')
     ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h_corr, '+:',label='corrected')
     if GPS_h:
-        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
+        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.elevation -(data.PINS1.elevation[0] -data.Laser.h[0]),'+:r',label='GPS elevation')
     ax2.set_ylabel('h_laser (m)')
     ax2.legend()
 
@@ -873,7 +876,7 @@ def laser_correction_superimposed(data,GPS_h=False):
     ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h, 'x:',label='original')
     ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h_corr, '+:',label='corrected')
     if GPS_h:
-        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
+        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.elevation -(data.PINS1.elevation[0] -data.Laser.h[0]),'+:r',label='GPS elevation')
     ax2.set_ylabel('h_laser (m)')
     ax2.legend(loc=2)
 
@@ -885,8 +888,236 @@ def laser_correction_superimposed(data,GPS_h=False):
     ax2.grid()
     return fig
 
+
+
+
+
+
+
+
+#%%  Sync Laser and GPX data from UAV
+
+def GPXToPandas(gpx_path):
+    with open(gpx_path) as f:
+        gpx = gpxpy.parse(f)
+    
+    # Convert to a dataframe one point at a time.
+    points = []
+    for segment in gpx.tracks[0].segments:
+        for p in segment.points:
+            points.append({
+                'time': p.time,
+                'lat': p.latitude,
+                'lon': p.longitude,
+                'elevation': p.elevation,
+            })
+    df=pd.DataFrame.from_records(points)
+    df.time=df.time.dt.tz_convert('UTC')
+    
+    # interpolate times if overlapping
+    for i in df.index[1:-1]:
+        if df.time[i]-df.time[i-1]==datetime.timedelta(seconds=0):
+            df.time.loc[i]=df.time[i]+(df.time[i+1]-df.time[i])/2
+    
+    return df
+
+
+def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0):
+        """
+        Find values of t1 in t2 and return the corresponding values x. For missing data different strategies can be chosen.
+
+        Input:
+        ------
+
+        t1:         time serie 1
+        x:          values corresponding to time series 1
+        t2:         time serie 2
+        method:     Method to use for missing data.
+                        exact:          Keep just
+                        linInterpol:    linear interploation between two values, if time interval < maxDelta [s]
+                        nearest:        get nearest value. If time lag is > maxDelta return NAN.
+                        nearest_2:        Fill up all values of x in x2 in the position t2 corresponding to t1. (loop trough t1). If time lag is > maxDelta return NAN. Nearest value is returned.
+
+        maxDelta:   maximum time difference in [s] of interpolation or nearest
+
+
+        **kwargs:   argments to be passed to np.genfromtxt
+
+        Output:
+        -------
+        x(t1==t2):    time array in datetime format and data array.
+
+
+        """
+        t2=np.array(t2)
+        t1=np.array(t1)
+        x=np.array(x)
+        
+        # check
+        if len(t1)!=len(x):
+                raise ValueError('t1 and x have not the same length!')
+
+
+        x2=np.zeros([len(t2),1])
+        # x2=np.zeros([len(t2),1],dtype=x.dtype)
+
+        if method=='exact':
+                # return    np.where(t1[t1.searchsorted(t2)]==t2,x,np.nan)
+
+
+                for i,a in enumerate(t2):
+                        j=np.searchsorted(t1,a)
+
+                        if a>t1[-1] or a<t1[0]:
+                                x2[i]=np.nan
+                        elif t1[j]==a:
+
+                                x2[i]=x[j]
+                        else:
+                                x2[i]=np.nan
+                return x2
+
+
+        elif method=='linInterpol':
+                for i,a in enumerate(t2):
+
+                        j=np.searchsorted(t1,a)
+
+                        if a>t1[-1] or a<t1[0]:
+                                x2[i]=np.nan
+                        elif t1[j]==a:
+
+                                x2[i]=x[j]
+                        else:
+
+                                try: #try to used datetime
+                                        d=(t1[j]-t1[j-1]).total_seconds()
+                                        d2=(a-t1[j-1]).total_seconds()
+                                except:
+                                        d=(t1[j]-t1[j-1])
+                                        d2=(a-t1[j-1])
+
+                                if d>maxDelta:
+                                        x2[i]=np.nan
+
+                                else:
+                                        x2[i]=x[j-1]+d2/d*(x[j]-x[j-1])
+
+                return x2
+
+
+        elif method=='nearest':
+                try: #try to used datetime
+                        (t1[0]-t2[0])<datetime.timedelta(seconds=maxDelta)
+                        delta=datetime.timedelta(seconds=maxDelta)
+                except TypeError:
+                       delta =maxDelta
+
+
+                for i,a in enumerate(t2):
+
+                        j=np.searchsorted(t1,a)
+
+                        if j==len(t1): # j exeeding index max
+                                j-=1
+
+
+                        if a>=t1[j]:
+                                d=a-t1[j]
+
+                                if j<len(t1)-1:
+                                        d2=t1[j+1]-a
+
+                                        if d>delta and d2>delta:
+                                                x2[i]=np.nan
+                                        elif d>d2:
+                                                x2[i]=x[j+1]
+                                        else:
+                                                x2[i]=x[j]
+
+                                else:
+                                        if d>delta :
+                                                x2[i]=np.nan
+                                        else:
+                                                x2[i]=x[j]
+
+
+                        else:
+                                d=t1[j]-a
+
+                                if j>0:
+                                        d2=a-t1[j-1]
+
+                                        if d>delta and d2>delta:
+                                                x2[i]=np.nan
+                                        elif d>d2:
+                                                x2[i]=x[j-1]
+                                        else:
+                                                x2[i]=x[j]
+
+                                else:
+                                        if d>delta :
+                                                x2[i]=np.nan
+                                        else:
+                                                x2[i]=x[j]
+
+                return x2
+
+
+        elif method=='nearest_2':
+                try: #try to used datetime
+                        (t1[0]-t2[0])<datetime.timedelta(seconds=maxDelta)
+                        delta=[datetime.timedelta(seconds=maxDelta) for i in range(len(x2)) ]
+
+                except TypeError:
+                       delta = np.ones([len(x2),1])*maxDelta
+
+                x2*=np.nan
+
+                for i,a in enumerate(t1):
+
+                        j=np.searchsorted(t2,a)
+
+
+                        if j==len(t2): # j exeeding index max
+                                d2=a-t2[j-1]
+                                if d2<delta[j-1]:
+                                        delta[j-1]=d2
+                                        x2[j-1]=x[i]
+
+                        elif j==0:
+                                d=t2[j]-a
+                                if d<delta[j]:
+
+                                        delta[j]=d
+                                        x2[j]=x[i]
+
+                        else:
+                                d=t2[j]-a
+                                d2=a-t2[j-1]
+
+                                if d>d2:
+                                        if d2<delta[j-1]:
+                                                delta[j-1]=d2
+                                                x2[j-1]=x[i]
+                                else:
+                                        if d<delta[j]:
+                                                delta[j]=d
+                                                x2[j]=x[i]
+
+
+
+                return x2
+
+        else:
+                raise ValueError('Unnown method! ')
+
+
+
+
+
 # %% plot on map
-def plot_map(data,z='height',ax=[],cmap= cm.batlow,title=[],timelim=[],timeformat='ms'):
+def plot_map(data,z='elevation',ax=[],cmap= cm.batlow,title=[],timelim=[],timeformat='ms'):
     
     if ax==[]:
         fig=pl.figure()
@@ -907,7 +1138,7 @@ def plot_map(data,z='height',ax=[],cmap= cm.batlow,title=[],timelim=[],timeforma
             
     c=getattr(d,z)[lim[0]:lim[1]] # get data color plot
     
-    if z=='height':
+    if z=='elevation':
         label='elevation (m a.s.l.)'
         c=c 
     elif z=='TOW':
@@ -944,7 +1175,7 @@ def image_spoof(self, tile): # this function pretends not to be a Python script
         return img, self.tileextent(tile), 'lower' # reformat for cartopy
     
     
-def plot_mapOSM(data,z='height',ax=[],cmap= cm.batlow,title=[], extent=[]):
+def plot_mapOSM(data,z='elevation',ax=[],cmap= cm.batlow,title=[], extent=[]):
     """
     Plot data (z) on Open Street Map layer.
     
@@ -954,7 +1185,7 @@ def plot_mapOSM(data,z='height',ax=[],cmap= cm.batlow,title=[], extent=[]):
         DESCRIPTION.
 
     z : TYPE, optional
-        DESCRIPTION. The default is 'height'.
+        DESCRIPTION. The default is 'elevation'.
     ax : TYPE, optional
         DESCRIPTION. The default is [].
     cmap : TYPE, optional
@@ -979,7 +1210,7 @@ def plot_mapOSM(data,z='height',ax=[],cmap= cm.batlow,title=[], extent=[]):
     # prepare data
     d=data.PINS1     
     c=np.array( getattr(d,z))
-    if z=='height':
+    if z=='elevation':
         label='elevation (m a.s.l.)'
         c=c 
     elif z=='TOW':
@@ -1030,7 +1261,7 @@ def plot_mapOSM2(d,z='TOW',ax=[],cmap= cm.batlow,title=[], extent=[]):
         DESCRIPTION.
 
     z : TYPE, optional
-        DESCRIPTION. The default is 'height'.
+        DESCRIPTION. The default is 'elevation'.
     ax : TYPE, optional
         DESCRIPTION. The default is [].
     cmap : TYPE, optional
@@ -1054,7 +1285,7 @@ def plot_mapOSM2(d,z='TOW',ax=[],cmap= cm.batlow,title=[], extent=[]):
     
     # prepare data    
     c=np.array( getattr(d,z))
-    if z=='height':
+    if z=='elevation':
         label='elevation (m a.s.l.)'
         c=c 
     elif z=='TOW':
@@ -1099,6 +1330,16 @@ def getextent(data):
     maxlon=data.PINS1.lon.max()
     minlat=data.PINS1.lat.min()
     maxlat=data.PINS1.lat.max()
+    dlat=maxlat-minlat
+    dlon=maxlon-minlon
+    return minlon-dlon/10,maxlon+dlon/10,minlat-dlat/10,maxlat+dlat/10
+
+
+def getextent2(data):
+    minlon=data.lon.min()
+    maxlon=data.lon.max()
+    minlat=data.lat.min()
+    maxlat=data.lat.max()
     dlat=maxlat-minlat
     dlon=maxlon-minlon
     return minlon-dlon/10,maxlon+dlon/10,minlat-dlat/10,maxlat+dlat/10
