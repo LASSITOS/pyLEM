@@ -1649,7 +1649,7 @@ def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
 
 
 
-def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title=''):
+def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title='',channels=[1,2,3]):
     
     if units=='seconds':
         i_start=int(start*SPS)
@@ -1667,7 +1667,7 @@ def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title=''):
                        max_rows=i_stop,skip_header=i_start)
     if title=='':
         title='Raw data: {:.2f}s to {:.2f}s'.format(start,stop)
-    return plotraw2(data,title=title,starttime=start)
+    return plotraw3(data,title=title,starttime=start,Chs=channels)
 
 
 def loadSectionRawData(file,start,stop,SPS=19200,units='seconds'):
@@ -2164,7 +2164,32 @@ def plotraw2(d,title='',starttime=0):
     
     return fig
 
-
+def plotraw3(d,title='',starttime=0,Chs=[1,2]):
+    
+    seconds= np.arange(0,len(d[:,2]))/SPS+starttime
+    fft,freq=myfft(d)
+    
+    N=len(Chs)
+    
+    fig,axs=pl.subplots(N,2, figsize=(8,8) )
+    
+    for i,ch in enumerate(Chs):
+        ax=axs[0,i]
+        ax2=axs[1,i]
+        ax.plot(seconds,d[:,ch])
+        ax.set_ylabel(f'ch{ch:d} amplitude ()')
+        ax.set_xlabel('time (s)')
+     
+        ax2.plot(freq/1000 ,np.log2(np.absolute(fft[ch-1,:])),label='output amp ')
+        ax2.set_ylabel(f'ch{ch:d} amplitude )')
+        ax2.set_xlabel('frequency (kHz)')
+        ax2.set_ylim(bottom=0)
+    
+    
+    axs[0,0].set_title(title)
+    fig.tight_layout()
+    
+    return fig
 
 def plotFFT(data,SPS,ax=0,scale='linear',label='FFT Amp'):
     fft=np.abs(np.fft.rfft(data))/data.shape[0]

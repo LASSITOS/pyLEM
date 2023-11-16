@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import re
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 import matplotlib.pyplot as pl
 import os,sys
 from cmcrameri import cm
@@ -23,7 +23,7 @@ import io
 from urllib.request import urlopen, Request
 from PIL import Image
 import gpxpy
-import datetime
+
 
 # %%  data class
 
@@ -297,7 +297,7 @@ def parseNMEA(l):
     """
     l: string with data
     
-    return elevation, signal quality, temperature 
+    
     
     """
     
@@ -328,7 +328,7 @@ def parseNMEAfloat(l):
     """
     l: string with data
     
-    return elevation, signal quality, temperature 
+    
     
     """
     
@@ -346,7 +346,7 @@ def parseNMEAfloat(l):
               print('Coud not parse valid NMEA string:', l)  
               return 'Error',l 
     else:
-        print('Coud not parse string:', l)    
+        # print('Coud not parse string:', l)    
         return 'Error',l             
 
     return Msg_key,a
@@ -916,7 +916,7 @@ def GPXToPandas(gpx_path):
     
     # interpolate times if overlapping
     for i in df.index[1:-1]:
-        if df.time[i]-df.time[i-1]==datetime.timedelta(seconds=0):
+        if df.time[i]-df.time[i-1]==timedelta(seconds=0):
             df.time.loc[i]=df.time[i]+(df.time[i+1]-df.time[i])/2
     
     return df
@@ -990,7 +990,7 @@ def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0):
                                 x2[i]=x[j]
                         else:
 
-                                try: #try to used datetime
+                                try: #try to use datetime format
                                         d=(t1[j]-t1[j-1]).total_seconds()
                                         d2=(a-t1[j-1]).total_seconds()
                                 except:
@@ -1008,8 +1008,8 @@ def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0):
 
         elif method=='nearest':
                 try: #try to used datetime
-                        (t1[0]-t2[0])<datetime.timedelta(seconds=maxDelta)
-                        delta=datetime.timedelta(seconds=maxDelta)
+                        (t1[0]-t2[0])<timedelta(seconds=maxDelta)
+                        delta=timedelta(seconds=maxDelta)
                 except TypeError:
                        delta =maxDelta
 
@@ -1066,8 +1066,8 @@ def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0):
 
         elif method=='nearest_2':
                 try: #try to used datetime
-                        (t1[0]-t2[0])<datetime.timedelta(seconds=maxDelta)
-                        delta=[datetime.timedelta(seconds=maxDelta) for i in range(len(x2)) ]
+                        (t1[0]-t2[0])<timedelta(seconds=maxDelta)
+                        delta=[timedelta(seconds=maxDelta) for i in range(len(x2)) ]
 
                 except TypeError:
                        delta = np.ones([len(x2),1])*maxDelta
