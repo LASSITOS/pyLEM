@@ -176,7 +176,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         
         if savefile:
             # write file header
-            write_file_header(fileOutput)
+            write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch)
             
             
             #save datamean to file
@@ -694,9 +694,9 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
     
     f0=f
     if findFreq:   # upload a chunk of data and determine the frequency
-        data=np.genfromtxt(file, dtype='int32' , delimiter=',', usecols=[0,1,2,3],
-                           converters={1:convert,2:convert,3:convert},
-                           max_rows=200000)
+        
+    
+
         
         plot=True
         threshold=0.5
@@ -706,9 +706,20 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
         df=0.005
         n_fmaxsearch=200
         drop_startup=15000
+        if len(i_blok)==2:
+            ia=0
+            ib=i_blok[1]-i_blok[0]
         
-        # find starting poit of data 
-        if len(i_blok)==0:
+            data=np.genfromtxt(file, dtype='int32' , delimiter=',', usecols=[0,1,2,3],
+                           converters={1:convert,2:convert,3:convert},
+                           skip_header=i_blok[0],max_rows=ib+1)
+        
+        
+        elif len(i_blok)==0:  # find starting poit of data 
+            data=np.genfromtxt(file, dtype='int32' , delimiter=',', usecols=[0,1,2,3],
+                           converters={1:convert,2:convert,3:convert},
+                           max_rows=200000)
+        
             i_on,i_off=getIndexBlocks(data[:,i_Tx],threshold=threshold,parameter='std',
                                       plot=plot,window=win_f0,detrend=detrend) 
             print(i_on)      
@@ -734,9 +745,7 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
             ia=i_on[0]+drop_startup
             ib=i_off[0]
             
-        elif len(i_blok)==2:
-            ia=i_blok[0]
-            ib=i_blok[1]
+
         else:
             raise ValueError('i_block must be a list with two limits. Frequency can not be determined!')
         
