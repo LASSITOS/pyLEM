@@ -1134,81 +1134,11 @@ def interpolData(data,datamean,proplist):
         x=getattr(data,p)
         datamean[p]=x[ind]+(x[ind]-x[ind-1])*dt
     
-def gps_datetime(time_week, time_s, leap_seconds=18):
-    '''
 
-    Parameters
-    ----------
-    time_week : scalar
-        GPS week.
-    time_s : scalar
-        time of week in seconds.
-    leap_seconds : TYPE, optional
-        Leap seconds. The default is 18.
-
-    Returns
-    -------
-    datetime
-        DESCRIPTION.
-
-    '''
-    gps_epoch = datetime(1980, 1, 6, tzinfo=ZoneInfo("UTC"))
-    return gps_epoch + timedelta(weeks=time_week, 
-                                 seconds=time_s-leap_seconds)
 
 gps_datetime_np=np.vectorize(gps_datetime, doc='Vectorized `gps_datetime`')
 
-def get_TOW0(data,iStart=2,PIN_start=8,dt=9000):
-    '''
-    Parameters
-    ----------
-    data : INSLASERdata object 
-        
-    iStart : int, optional
-        DESCRIPTION. The default is 2.
 
-    Returns
-    -------
-    Time of week (s) of ADC data start 
-
-    '''
-    if data.PSTRB.pin[iStart]!=PIN_start:
-        
-        if sum(data.PSTRB.pin==PIN_start)==0:
-            try:
-                if len(data.PSTRB.pin)==1:
-                    iStart2=0
-                else:
-                    iStart2= np.where(np.diff(data.PSTRB.TOW)>dt)[0][0]
-                start =data.PSTRB.TOW[iStart2]/1000
-           
-            except IndexError:
-               raise IndexError(f'No correct time stamp was found. All delta time <{dt:d} ms.', np.diff(data.PSTRB.TOW))
-                   
-        else:    
-            raise ValueError(f'Timestamp {iStart} was not on pin {PIN_start:d} of INS.', iStart)
-    else:
-        start =data.PSTRB.TOW[iStart]/1000
-    
-    return start
-
-def get_t0(data,iStart=2):
-    '''
-    Parameters
-    ----------
-    data : INSLASERdata object 
-        
-    iStart : int, optional
-        DESCRIPTION. The default is 2.
-
-    Returns
-    -------
-    datetime of ADC data start 
-
-    '''
-    TOW=get_TOW0(data,iStart=iStart)
-    
-    return gps_datetime(data.PINS1.GPSWeek[0], TOW, leap_seconds=18)
 
 
 

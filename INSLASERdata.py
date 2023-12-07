@@ -23,7 +23,7 @@ import io
 from urllib.request import urlopen, Request
 from PIL import Image
 import gpxpy
-
+from zoneinfo import ZoneInfo
 
 # %%  data class
 
@@ -45,11 +45,13 @@ class MSG_type:
         for i,k in enumerate(keys):
             setattr(self,k,np.array([l[i] for l in values]))
 
-_MSG_list_=['Laser','PINS1','PSTRB','PINS2','VBat','Temp','Cal','SDwrite']    # NMEA message list to parse
+_MSG_list_=['Laser','PINS1','PSTRB','PINS2','GPGGA','PGPSP','VBat','Temp','Cal','SDwrite']    # NMEA message list to parse
 _keyList_=[['h','signQ','T','TOW'],        
           ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'elevation','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
           ['GPSWeek','TOW','pin','count'],
           ['TOW','GPSWeek','insStatus','hdwStatus','QuatW','QuatX','QuatY','QuatZ','velX', 'velY', 'velZ','lat', 'lon', 'elevation'],
+          ['UTC','lat','lat_unit','lon','lon_unit','Fix','NSat','hDop','MSL','MSL_unit','ondulation','ondulation_unit','last_DGP','DGPS_ID'],
+          ['TOW','GPSWeek','status','Latitude','Longitude','elevation_HAE','elevation_MSL','pDOP','hAcc','vAcc','Vel_X','Vel_Y','Velocity_Z','sAcc','cnoMean','towOffset','leapS'],
           ['V','TOW'],
           ['T','sensor','TOW'],
           ['On','ID','TOW'],
@@ -128,13 +130,17 @@ class INSLASERdata:
                     self.ToW=data[0]
 
                 if Msg_key=='Error':
-                    self.corrupt.append(l)
-                    # print("Message {:s} not in NMEA message list".format(Msg_key))
-                    try: 
-                        self.dropped.index(Msg_key)
-                    except ValueError: 
-                        self.dropped.append(Msg_key)
-                    continue
+                    
+                    Msg_key,data=parseNMEA(l)
+                    
+                    if Msg_key=='Error':
+                        self.corrupt.append(l)
+                        # print("Message {:s} not in NMEA message list".format(Msg_key))
+                        try: 
+                            self.dropped.index(Msg_key)
+                        except ValueError: 
+                            self.dropped.append(Msg_key)
+                        continue
                     
                 try:
                   j=self.MSG_list.index(Msg_key)
@@ -187,12 +193,29 @@ class INSLASERdata:
             
         print("Total lines read: ", i)   
         
-
+        
+        # get starting point
+        self.TOW0=get_TOW0(self)
+        
+        # extract single temperature sensors
+        for j in range(1,4):
+            i=self.Temp.sensor==j
+            if np.any(i):
+                setattr(self.Temp,f'TOW{j:d}',self.Temp.TOW[i])
+                setattr(self.Temp,f'T{j:d}',self.Temp.T[i])
+                setattr(self.Temp,f't{j:d}',self.Temp.TOW[i]-self.TOW0)
+        
         # correct h with angles from INS
         if correct_Laser:
                 self.corr_h_laser()
         
-    
+        # parse PGPSP status
+        try:
+            self.PGPSP.fix=(np.array(self.PGPSP.status,dtype=int) & 0x000001F00 )>>8
+        except AttributeError:
+            None
+            
+            
     def corr_h_laser(self):
         """
         correct elevation with angles from INS
@@ -343,7 +366,7 @@ def parseNMEAfloat(l):
           a=np.array(l[start+len(Msg_key)+2:end].split(','),dtype=float)
 
       except:
-              print('Coud not parse valid NMEA string:', l)  
+              # print('Coud not parse valid NMEA string:', l)  
               return 'Error',l 
     else:
         # print('Coud not parse string:', l)    
@@ -558,7 +581,106 @@ def chksum_nmea(sentence):
     return False
 
 
+
+
+def get_TOW0(data,iStart=2,PIN_start=8,dt=9000):
+    '''
+    Parameters
+    ----------
+    data : INSLASERdata object 
+        
+    iStart : int, optional
+        DESCRIPTION. The default is 2.
+
+    Returns
+    -------
+    Time of week (s) of ADC data start 
+
+    '''
+    try:
+        if data.PSTRB.pin[iStart]!=PIN_start:
+            
+            if sum(data.PSTRB.pin==PIN_start)==0:
+                try:
+                    if len(data.PSTRB.pin)==1:
+                        iStart2=0
+                    else:
+                        iStart2= np.where(np.diff(data.PSTRB.TOW)>dt)[0][0]
+                    start =data.PSTRB.TOW[iStart2]/1000
+               
+                except IndexError:
+                   raise IndexError(f'No correct time stamp was found. All delta time <{dt:d} ms.', np.diff(data.PSTRB.TOW))
+                       
+            else:    
+                raise ValueError(f'Timestamp {iStart} was not on pin {PIN_start:d} of INS.', iStart)
+        else:
+            start =data.PSTRB.TOW[iStart]/1000
+    except AttributeError:
+            start =data.PINS1.TOW[0]
+    return start
+
+def get_t0(data,iStart=2,PIN_start=8,dt=9000):
+    '''
+    Parameters
+    ----------
+    data : INSLASERdata object 
+        
+    iStart : int, optional
+        DESCRIPTION. The default is 2.
+
+    Returns
+    -------
+    datetime of ADC data start 
+
+    '''
+    TOW=get_TOW0(data,iStart=iStart,PIN_start=PIN_start,dt=dt)
     
+    return gps_datetime(data.PINS1.GPSWeek[0], TOW, leap_seconds=18)
+
+
+def gps_datetime(time_week, time_s, leap_seconds=18):
+    '''
+
+    Parameters
+    ----------
+    time_week : scalar
+        GPS week.
+    time_s : scalar
+        time of week in seconds.
+    leap_seconds : TYPE, optional
+        Leap seconds. The default is 18.
+
+    Returns
+    -------
+    datetime
+        DESCRIPTION.
+
+    '''
+    gps_epoch = datetime(1980, 1, 6, tzinfo=ZoneInfo("UTC"))
+    return gps_epoch + timedelta(weeks=time_week, 
+                                 seconds=time_s-leap_seconds)
+
+# %% plot functions
+    
+def plot_GPSquality(data,title=''):
+        
+    fig,[ax,ax2,ax3]=pl.subplots(3,1,sharex=True)
+    ax.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.fix)
+    ax.set_ylabel('GPS fix')
+    ax2.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.hAcc,label='horizontal')
+    ax2.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.vAcc,label='vertical')
+    ax2.legend()
+    ax2.set_ylabel('accuracy (m)')
+    ax3.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.cnoMean)
+    ax3.set_ylabel('meanCarrierToNoise ratio')
+    ax3.set_xlabel('Time (s)')
+
+    if title!='none':
+        ax.set_title(title)
+        
+    return fig
+
+
 def check_data(data):
     """
     Check data and produce some plots
