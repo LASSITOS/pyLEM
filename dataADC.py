@@ -1652,15 +1652,19 @@ def loadSectionRawData(file,start,stop,SPS=19200,units='seconds'):
   
 
 
-def EMagPy_forwardmanualdata(depths,freqs,d_coils=1.929,plot=True):
+def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
 
     # parameters for the synthetic model
-    nlayer = 1 # number of layers
-    depths =depths[:,None] 
+    nlayer = 2 # number of layers
+    depths =h_water[:,None] 
     npos = len(depths) # number of positions/sampling locations
-    conds = np.ones((npos, nlayer))*[0, 2400] # EC in mS/m
-    # depth of model 
-    depths2=depths[:,0]
+    
+    cond=np.array(cond)
+    cond[((cond>0)==False)]=0
+    
+    conds = np.zeros((npos, nlayer))
+    conds[:,1]= cond 
+    
     
     # defines coils configuration, frequency
     coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
