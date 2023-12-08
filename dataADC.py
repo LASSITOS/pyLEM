@@ -1517,8 +1517,8 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
          gs.append([])
          phis.append([])
          for i,ch in enumerate(Rx_ch):     
-            calQ=-(calQs[k,i,1:].transpose()-calQs[k,i,0])
-            calI=-(calIs[k,i,1:].transpose()-calIs[k,i,0])
+            calQ=(calQs[k,i,1:].transpose()-calQs[k,i,0])
+            calI=(calIs[k,i,1:].transpose()-calIs[k,i,0])
             g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
             
             calQs2[k].append(calQ)
