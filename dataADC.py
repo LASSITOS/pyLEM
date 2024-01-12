@@ -1670,7 +1670,6 @@ def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
     coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
     
     # foward modelling
-    
     k = Problem()
     k.setModels([depths], [conds])
     _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
@@ -2144,11 +2143,11 @@ def plotraw3(d,title='',starttime=0,Chs=[1,2]):
         ax=axs[0,i]
         ax2=axs[1,i]
         ax.plot(seconds,d[:,ch])
-        ax.set_ylabel(f'ch{ch:d} amplitude ()')
+        ax.set_ylabel(f'ch{ch:d} amplitude (-)')
         ax.set_xlabel('time (s)')
      
         ax2.plot(freq/1000 ,np.log2(np.absolute(fft[ch-1,:])),label='output amp ')
-        ax2.set_ylabel(f'ch{ch:d} amplitude )')
+        ax2.set_ylabel(f'ch{ch:d} amplitude FFT (bits)')
         ax2.set_xlabel('frequency (kHz)')
         ax2.set_ylim(bottom=0)
     
