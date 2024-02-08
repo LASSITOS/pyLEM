@@ -49,7 +49,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
     # Create dictionary containing parameters
     params=locals()  # add all function arguments to dictionary
     version='v1.2'
-    params['version']=version
+    params['pyLEM_version']=version
     
     
     
@@ -58,6 +58,10 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
     if savefile:
         fileOutput=path+'/LEM'+name+'.csv'
     
+    
+    
+    header=loadDataHeader(fileLASER)
+    params.update( header)
     
     print('Load INS+Laser: ',file)
     try:
@@ -146,7 +150,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                                                                flowpass=flowpass,window=window,keep_HF_data=False,
                                                                i_Tx=int(Tx_ch[2:]),
                                                                **kwargs)    
-        params={}
+        
         params['f']=f
         params['phase0']=phase0
         print(f'Freq: {f:.2f} Hz')

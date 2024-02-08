@@ -170,6 +170,9 @@ class INSLASERdata:
             else:
                 self.other.append(l)
         
+        
+        file.close()
+        
         # drop  laser points with ToW=0        
         try:
             if droplaserTow0:
@@ -315,6 +318,69 @@ class INSLASERdata:
         return data2
         
 # %% #########function definitions #############
+
+def loadDataHeader(filepath):
+    """
+    Read data from header of LEM INS__.csv file. Lines must strat with # and contain one = to be parsed. Comments after symbol &.
+
+    Parameters
+    ----------
+    filepath : TYPE
+        Path file.
+
+    Raises
+    ------
+    FileNotFoundError
+        DESCRIPTION.
+
+    Returns
+    -------
+    values : dictionary
+        Dictionary with values from file header
+
+    """
+    if not os.path.isfile(filepath) :
+        print("File not found!!!")
+        raise FileNotFoundError('File: {:s}'.format(filepath))
+    
+    
+    print('Reading header file: ',filepath)
+    print('----------------------------')
+    file = open(filepath, 'rt')
+    
+    
+    i=0
+    values={}
+    for l in file:
+        i+=1
+        if l[0]!='#':
+            continue
+        
+        elif l.find('=')!=-1:
+            var,val=l[1:].strip().split('=')
+            var=var.replace(' ', '_')
+            
+            try:
+                val=float(val)
+            except ValueError:
+                try:
+                    if len(val.strip().split(','))>1:
+                        val=np.array(val.strip().split(',')[:-1],dtype=float)
+                except ValueError:
+                    continue
+            values[var]=val
+            
+            
+        elif l.find('###Data###')!=-1:
+            # print("Found end header")
+            break
+
+    file.close()
+    
+    return values
+
+
+
 
 def parseNMEA(l):
     """
