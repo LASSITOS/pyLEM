@@ -2,10 +2,12 @@ import os
 import csv
 import sys
 
-def main(path='./',list=False,listonly=0):  # Read the first sector of the first disk as example.
+def main(path='./',list=False,listonly=0,file=''):  # Read the first sector of the first disk as example.
     """
-    Optional path:  path where files are saved
-    
+    Optional 
+    path:       path where files are saved
+    listonly:   LIST FILES BUT DON'T DOWNLOAD THEM
+    file:       file to be downloaded, if empty download all files
     E.g:  
     """
     if list:
@@ -13,14 +15,14 @@ def main(path='./',list=False,listonly=0):  # Read the first sector of the first
     
     if os.name == "nt":
         # Windows based OS normally uses '\\.\physicaldriveX' for disk drive identification.
-        read_sector(r"\\.\physicaldrive1",0,path=path,listonly=listonly)
+        read_sector(r"\\.\physicaldrive1",0,path=path,listonly=listonly,fDownload=file)
         print('done')
     else:
         # Linux based OS normally uses '/dev/diskX' for disk drive identification.
         print(read_sector("/dev/disk0"),path=path,listonly=listonly)
 
 
-def read_sector(disk, sector_no=0,path='./',listonly=0):
+def read_sector(disk, sector_no=0,path='./',listonly=0,fDownload=''):
     """Read a single sector of the specified disk.
     Keyword arguments:
     disk -- the physical ID of the disk to read.
@@ -88,22 +90,24 @@ def read_sector(disk, sector_no=0,path='./',listonly=0):
         if listonly==0:
             print("Reading files")
             for file in range(SD_FilePtr):
-                
-                filepath=path+'/ADC'+str(fileNames[file][:6])+'_'+str(fileNames[file][6:])+'.csv'
-                print('reading File: ',fileNames[file])
-                print('Saving as: ',filepath)
-                try:
-                    with open(filepath, 'w', encoding='UTF8', newline='') as f:
-                        writer = csv.writer(f)
-                        fp.seek(startAddress[file]*512)
-                        for i in range(fileSizes[file]):
-                            read = fp.read(512)
-                            for j in range(0,32):
-                                writer.writerow([int.from_bytes(read[j*16:j*16+4], 'little'), read[j*16+4:j*16+8].hex(), read[j*16+8:j*16+12].hex(), read[j*16+12:j*16+16].hex()])
-                except ValueError:
-                        print("VAlue error!!!!! Can't read:")
-                        print(fileNames[file])
-                        print("!!!!!")
+
+                if (fDownload==fileNames[file] or fDownload==''):
+                    filepath=path+'/ADC'+str(fileNames[file][:6])+'_'+str(fileNames[file][6:])+'.csv'
+                    print('reading File: ',fileNames[file])
+                    print('Saving as: ',filepath)
+                    try:
+                        with open(filepath, 'w', encoding='UTF8', newline='') as f:
+                            writer = csv.writer(f)
+                            fp.seek(startAddress[file]*512)
+                            for i in range(fileSizes[file]):
+                                read = fp.read(512)
+                                for j in range(0,32):
+                                    writer.writerow([int.from_bytes(read[j*16:j*16+4], 'little'), read[j*16+4:j*16+8].hex(), read[j*16+8:j*16+12].hex(), read[j*16+12:j*16+16].hex()])
+                    except ValueError:
+                            print("Value error!!!!! Can't read:")
+                            print(fileNames[file])
+                            print("!!!!!")
+            
         else:
             print("End of file list")
     
