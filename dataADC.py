@@ -213,6 +213,8 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
 
 
 def plot_QandI(datamean,params,Rx_ch,MultiFreq):
+
+    
     if MultiFreq:
         for i,ch in enumerate(Rx_ch):
             j=i+1
@@ -230,13 +232,18 @@ def plot_QandI(datamean,params,Rx_ch,MultiFreq):
                 ax.legend()
                 pl.title(f'{ch:s}, f{k+1:d}:{f:.1f}Hz')
     else:
+        #cut first 3 second and last second
+        
+        a=datamean.index.searchsorted(3*SPS)
+        b=datamean.index.searchsorted(1*SPS)
+        
         for i,ch in enumerate(Rx_ch):
             j=i+1
             pl.figure()
-            pl.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}'],'x',label='Q Rx')
-            pl.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}'],'x',label='I Rx')
-            pl.xlim(3,datamean.index[-1]/SPS-2)
-            pl.plot(pl.gca().get_xlim(),[0,0],'k--',)
+            pl.plot(datamean.index[a:-b]/SPS,datamean[f'Q_Rx{j:d}'].values[a:-b],'x',label='Q Rx')
+            pl.plot(datamean.index[a:-b]/SPS,datamean[f'I_Rx{j:d}'].values[a:-b],'x',label='I Rx')
+            pl.xlim(3,datamean.index[-b]/SPS)
+            # pl.plot(pl.gca().get_xlim(),[0,0],'k--',)
             pl.ylabel('amplitude (-)')
             pl.xlabel('time (s)')
             pl.legend()
@@ -2137,7 +2144,7 @@ def plotraw3(d,title='',starttime=0,Chs=[1,2]):
     
     N=len(Chs)
     
-    fig,axs=pl.subplots(N,2, figsize=(8,8) )
+    fig,axs=pl.subplots(2,N, figsize=(8,8) )
     
     for i,ch in enumerate(Chs):
         ax=axs[0,i]
