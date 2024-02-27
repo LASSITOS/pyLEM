@@ -1688,6 +1688,32 @@ def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
     return k.surveys[0].df
 
 
+def EMagPy_forwardmanualdata_old(depths,freqs,d_coils=1.929,plot=True):
+
+    # parameters for the synthetic model
+    nlayer = 1 # number of layers
+    depths =depths[:,None] 
+    npos = len(depths) # number of positions/sampling locations
+    conds = np.ones((npos, nlayer))*[0, 2400] # EC in mS/m
+    # depth of model 
+    depths2=depths[:,0]
+    
+    # defines coils configuration, frequency
+    coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
+    
+    # foward modelling
+    
+    k = Problem()
+    k.setModels([depths], [conds])
+    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
+    
+    if plot:
+        k.showResults() # display original model
+    # k.show() # display ECa computed from forward modelling
+    
+    return k.surveys[0].df
+
+
 def get_pointsond(d,data,Dd=1):
     ind=[]
     for p in d:
