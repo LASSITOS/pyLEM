@@ -298,7 +298,7 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
     
     # derive calibration parameters from automatic calibration using calibration coil
     if autoCal:
-        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop=CheckCalibration(dataINS,datamean,params['f'],plot=plot)
+        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration(dataINS,datamean,params['f'],plot=plot)
 
     
         # Define transformation function
@@ -329,6 +329,8 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
         CalParams['I0']=np.array(calI0)[i_autoCal,:]
         CalParams['start']=start[i_autoCal]
         CalParams['stop']=stop[i_autoCal]
+        CalParams['on']=on[i_autoCal]
+        CalParams['off']=off[i_autoCal]
     
     CalParams['A0']=A0
     CalParams['phase0']=phase0
@@ -363,7 +365,7 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
     
     # derive calibration parameters from automatic calibration using calibration coil
     if autoCal and dataINS.Cal.len>0:
-        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop=CheckCalibration_multiFreq(dataINS,datamean,params['freqs'],Rx_ch=Rx_ch,plot=plot)
+        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration_multiFreq(dataINS,datamean,params['freqs'],Rx_ch=Rx_ch,plot=plot)
 
     
         # Define transformation function
@@ -399,6 +401,8 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
         CalParams['I0']=np.array(calI0)[i_autoCal]
         CalParams['start']=start[i_autoCal]
         CalParams['stop']=stop[i_autoCal]
+        CalParams['on']=on[i_autoCal]
+        CalParams['off']=off[i_autoCal]
     elif dataINS.Cal.len==0:
         print('No calibration stamps found!  Autocalibration not possible!!!')
         params['autoCal']=False
@@ -1154,7 +1158,60 @@ gps_datetime_np=np.vectorize(gps_datetime, doc='Vectorized `gps_datetime`')
 
 
 
+#%% Code for signal to noise 
 
+
+
+def signalStrength(datamean,params,l_period=5):
+    l_period=5 # lenght of period after calibration for averaging 
+    
+    stop_t=params['CalParams']['stop']
+    
+    t_a=stop_t+0.5
+    t_b=t_a+5
+    
+    i_a=datamean.time.searchsorted(t_a)
+    i_b=datamean.time.searchsorted(t_b)
+    
+    
+    values_I=[get_values(datamean['I_Rx1'],i_a,i_b)]
+    values_Q=[get_values(datamean['Q_Rx1'],i_a,i_b)]
+    
+    
+    for t_on,t_off in zip(params['CalParams']['on'],params['CalParams']['off']):
+        i_a=datamean.time.searchsorted(t_on+0.1)
+        i_b=datamean.time.searchsorted(t_off-0.1)
+        values_I.append(get_values(datamean['I_Rx1'],i_a,i_b))
+        values_Q.append(get_values(datamean['Q_Rx1'],i_a,i_b))
+    
+    values_I=np.array(values_I)
+    values_I=np.array(values_I)
+    values_Q=np.array(values_Q)
+    values_Q=np.array(values_Q)
+    
+    ratios_Q=values_Q[0][2]/values_Q[1:][0]  
+    ratios_I=values_I[0][2]/values_I[1:][0]    
+    
+    print('Signal strength:\n---------------')    
+    print('I: Std: {:.6f}, max deviation: {:.6f}'.format(values_I[0][2],values_I[0][3]))   
+    print('Q: Std: {:.6f}, max deviation: {:.6f}'.format(values_Q[0][2],values_Q[0][3]))  
+    for i in range(1,len(params['CalParams']['on'])):
+        print('Cal point {:d}'.format(i)) 
+        print('\t Amplitude I: {:.6f} \nStd I Air/Amp. I: {:.6f}'.format(values_I[i][0],values_I[0][2]/values_I[i][0]))   
+        print('\t Amplitude Q: {:.6f} \nStd Q Air/Amp. Q: {:.6f}'.format(values_Q[i][0],values_Q[0][2]/values_Q[i][0]))  
+    
+    return ratios_I,ratios_Q,values_I,values_Q 
+
+
+
+    
+# get 
+def get_values(d,i_a,i_b):
+    I_med=d.iloc[i_a:i_b].median()
+    I_mean=d.iloc[i_a:i_b].mean()
+    I_std=d.iloc[i_a:i_b].std()
+    I_max=np.abs(d.iloc[i_a:i_b]-I_mean).max()
+    return I_med,I_mean,I_std, I_max
 
 
 
@@ -1536,7 +1593,7 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
             phis[k].append(phi)
     
     
-    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop
+    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off
     
 
 def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
@@ -1615,7 +1672,7 @@ def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
                 phis[k][i].append(phi)
     
     
-    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop
+    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off
 
 
 
@@ -1830,7 +1887,8 @@ def find_missing(d,pr=True):   # check missing data
 
 
 def myfft(d):
-    fft= np.array([np.fft.rfft(d[:,1]),np.fft.rfft(d[:,2]),np.fft.rfft(d[:,3])])/len(d[:,1])
+    # fft= np.array([np.fft.rfft(d[:,i]),np.fft.rfft(d[:,2]),np.fft.rfft(d[:,3])])/len(d[:,1])
+    fft= np.array([np.fft.rfft(d[:,i]) for i in range(1,d.shape[1])])/len(d[:,1])
     freq= np.fft.rfftfreq(len(d[:,1]), d=1.0/SPS)
     return fft,freq
 
