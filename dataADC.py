@@ -42,7 +42,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                    savefile=True,
                      window=1920,freq=0,phase0=0,SPS=19200,flowpass=30,
                      autoCal=True,i_autoCal=0,i_cal=[],
-                     INSkargs={},MultiFreq=False,n_freqs=3,
+                     INSkargs={},MultiFreq=False,n_freqs=3,iStart=2,dT_start=0,
                      **kwargs):
     
     
@@ -99,7 +99,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         
         # sync ADC and INS/Laser
         #----------------------------
-        sync_ADC_INS(datamean,dataINS)
+        sync_ADC_INS(datamean,dataINS,iStart=iStart,dT_start=dT_start)
         datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
         
         
@@ -144,9 +144,9 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         datamean, i_missing, gap,f,phase0=loadADCraw_singleFreq(file,
                                                                f=freq,phase0=phase0,SPS=SPS,
                                                                flowpass=flowpass,window=window,keep_HF_data=False,
-                                                               i_Tx=int(Tx_ch[2:]),
+                                                               i_Tx=int(Tx_ch[2:]),plot=plot,
                                                                **kwargs)    
-        params={}
+        # params={}
         params['f']=f
         params['phase0']=phase0
         print(f'Freq: {f:.2f} Hz')
@@ -162,7 +162,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         
         # sync ADC and INS/Laser
         #----------------------------
-        sync_ADC_INS(datamean,dataINS)
+        sync_ADC_INS(datamean,dataINS,iStart=iStart,dT_start=dT_start)
         datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
         
         
@@ -212,7 +212,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
 
 
 
-def plot_QandI(datamean,params,Rx_ch,MultiFreq):
+def plot_QandI(datamean,params,Rx_ch,MultiFreq,title=''):
 
     
     if MultiFreq:
@@ -247,7 +247,12 @@ def plot_QandI(datamean,params,Rx_ch,MultiFreq):
             pl.ylabel('amplitude (-)')
             pl.xlabel('time (s)')
             pl.legend()
-            pl.title(ch)
+            if len(title)>0:
+                pl.title(title)
+            elif len(Rx_ch)>1:
+                pl.title('f{:.1f}Hz, ch{:s}'.format(params['f'],ch))
+            else:
+                pl.title('f{:.1f}Hz'.format(params['f']))
 
 def NormRxbyTx(datamean,Rx_ch,columns,tx=2):
     for i,ch in enumerate(Rx_ch):
@@ -297,7 +302,7 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
     
     
     # derive calibration parameters from automatic calibration using calibration coil
-    if autoCal:
+    if autoCal and dataINS.Cal.len>0:
         gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration(dataINS,datamean,params['f'],plot=plot)
 
     
@@ -332,9 +337,13 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
         CalParams['on']=on[i_autoCal]
         CalParams['off']=off[i_autoCal]
     
+    elif dataINS.Cal.len==0:
+        print('No calibration stamps found!  Autocalibration not possible!!!')
+        params['autoCal']=False
+    
     CalParams['A0']=A0
     CalParams['phase0']=phase0
-    
+
     return CalParams
 
 
@@ -643,7 +652,7 @@ def LockInADCrawfile(path,name, Tx_ch='ch2', Rx_ch=['ch1'],
 
 def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
                           flowpass=50,chunksize=19200,keep_HF_data=False,
-                          findFreq=True,i_Tx=3,i_blok=[],
+                          findFreq=True,i_Tx=3,i_blok=[],plot=True,
                           **kwargs):
     """
     Read raw data file in blocks and extract signal over LockIn with lowpass filter. Single frequency. 
@@ -709,7 +718,7 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
     
 
         
-        plot=True
+        
         threshold=0.5
         win_f0=100
         dt_min=0.2
@@ -1118,10 +1127,10 @@ def loadADCraw_multiFreq(file,SPS=19200,
 
 #%%  Sync INS/Laser and ADC
 
-def sync_ADC_INS(datamean,dataINS):
+def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
     
     try:
-        TOW=datamean.index/SPS+get_TOW0(dataINS)
+        TOW=datamean.index/SPS+get_TOW0(dataINS,iStart=iStart)+dT_start
         t = gps_datetime_np(dataINS.PINS1.GPSWeek[0],TOW)
         datamean['t']=t
         datamean['TOW']=TOW
@@ -1583,7 +1592,7 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
          for i,ch in enumerate(Rx_ch):     
             calQ=(calQs[k,i,1:].transpose()-calQs[k,i,0])
             calI=(calIs[k,i,1:].transpose()-calIs[k,i,0])
-            g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
+            g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=plot)
             
             calQs2[k].append(calQ)
             calIs2[k].append(calI)

@@ -615,7 +615,7 @@ def get_TOW0(data,iStart=2,PIN_start=8,dt=9000):
                 raise ValueError(f'Timestamp {iStart} was not on pin {PIN_start:d} of INS.', iStart)
         else:
             start =data.PSTRB.TOW[iStart]/1000
-    except AttributeError:
+    except (AttributeError, IndexError) :
             start =data.PINS1.TOW[0]
     return start
 
@@ -904,7 +904,7 @@ def plot_longlat(data,z='elevation',ax=[],cmap= cm.batlow):
 
         
 
-def plot_summary(data,extent,cmap=cm.batlow,heading=True):
+def plot_summary(data,extent,cmap=cm.batlow,heading=True,title=''):
     
     fig=pl.figure(figsize=(8,10))
     spec = fig.add_gridspec(ncols=1, nrows=9)
@@ -917,7 +917,11 @@ def plot_summary(data,extent,cmap=cm.batlow,heading=True):
         data.plot_mapOSM(z='TOW',extent=extent,ax=ax0, cmap=cmap  )
     except ValueError:
         print('Can not download map!! No internet??')
-    ax0.set_title(data.name.strip('.csv').strip('\\'))
+    
+    if len(title)==0:
+        ax0.set_title(data.name.strip('.csv').strip('\\'))
+    else:
+        ax0.set_title(title)
         
     
     ax1 = fig.add_subplot(spec[3:5, 0])
@@ -970,6 +974,58 @@ def plot_summary2(data,extent,cmap=cm.batlow,heading=True):
     plot_att(data,ax=ax3,title='none',heading=heading)
     pl.tight_layout()
     return fig
+
+
+
+def plot_h_LatLon(data):
+    
+    lat=data.PINS1.lat[ data.PINS1.TOW.searchsorted(data.Laser.TOW )]
+    lon=data.PINS1.lon[ data.PINS1.TOW.searchsorted(data.Laser.TOW )]
+        
+    fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+    ax.set_title('name:{:s}'.format(data.name))
+    ax.plot(lat, data.Laser.h,'--k')
+    
+    ax.set_ylabel('h Laser (m)')
+    pl.xlabel('time (s)')
+    # ax.set_ylim(0.06,1)
+    
+    # ax3=ax2.twinx()
+    ax2.plot(lat,lon,'x')
+    ax2.set_ylabel('lon')
+    ax2.set_xlabel('lat')
+    # ax2.set_ylim(-0.04,0.3)
+    pl.tight_layout()
+
+    return fig
+
+
+def plot_h_LatLon2(data):
+    
+    lat=data.PINS1.lat[ data.PINS1.TOW.searchsorted(data.Laser.TOW )]
+    lon=data.PINS1.lon[ data.PINS1.TOW.searchsorted(data.Laser.TOW )]
+    t=data.Laser.TOW-data.PINS1.TOW[0]
+    
+    fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+    ax.set_title('name:{:s}'.format(data.name))
+    ax.plot(t, data.Laser.h,'--k')
+    
+    ax.set_ylabel('h Laser (m)')
+    pl.xlabel('time (s)')
+    # ax.set_ylim(0.06,1)
+    
+    ax3=ax2.twinx()
+    ax2.plot(t,lat,'xb')
+    ax3.plot(t,lon,'xg')
+    ax3.set_ylabel('lon')
+    ax2.set_ylabel('lat')
+    ax2.set_xlabel('time (s)')
+
+    # ax2.set_ylim(-0.04,0.3)
+    pl.tight_layout()
+
+    return fig
+
 
 
 def laser_correction(data,show_corr_angles=0,GPS_h=False,heading=False):
