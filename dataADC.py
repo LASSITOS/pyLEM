@@ -42,7 +42,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                    savefile=True,
                      window=1920,freq=0,phase0=0,SPS=19200,flowpass=30,
                      autoCal=True,i_autoCal=0,i_cal=[],
-                     INSkargs={},MultiFreq=False,n_freqs=3,
+                     INSkargs={},MultiFreq=False,n_freqs=3,iStart=2,dT_start=0,
                      **kwargs):
     
     
@@ -103,7 +103,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         
         # sync ADC and INS/Laser
         #----------------------------
-        sync_ADC_INS(datamean,dataINS)
+        sync_ADC_INS(datamean,dataINS,iStart=iStart,dT_start=dT_start)
         datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
         
         
@@ -148,9 +148,10 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         datamean, i_missing, gap,f,phase0=loadADCraw_singleFreq(file,
                                                                f=freq,phase0=phase0,SPS=SPS,
                                                                flowpass=flowpass,window=window,keep_HF_data=False,
-                                                               i_Tx=int(Tx_ch[2:]),
+                                                               i_Tx=int(Tx_ch[2:]),plot=plot,
                                                                **kwargs)    
-        
+
+        # params={}
         params['f']=f
         params['phase0']=phase0
         print(f'Freq: {f:.2f} Hz')
@@ -166,7 +167,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         
         # sync ADC and INS/Laser
         #----------------------------
-        sync_ADC_INS(datamean,dataINS)
+        sync_ADC_INS(datamean,dataINS,iStart=iStart,dT_start=dT_start)
         datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
         
         
@@ -216,7 +217,9 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
 
 
 
-def plot_QandI(datamean,params,Rx_ch,MultiFreq):
+def plot_QandI(datamean,params,Rx_ch,MultiFreq,title=''):
+
+    
     if MultiFreq:
         for i,ch in enumerate(Rx_ch):
             j=i+1
@@ -234,17 +237,27 @@ def plot_QandI(datamean,params,Rx_ch,MultiFreq):
                 ax.legend()
                 pl.title(f'{ch:s}, f{k+1:d}:{f:.1f}Hz')
     else:
+        #cut first 3 second and last second
+        
+        a=datamean.index.searchsorted(3*SPS)
+        b=datamean.index.searchsorted(1*SPS)
+        
         for i,ch in enumerate(Rx_ch):
             j=i+1
             pl.figure()
-            pl.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}'],'x',label='Q Rx')
-            pl.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}'],'x',label='I Rx')
-            pl.xlim(3,datamean.index[-1]/SPS-2)
-            pl.plot(pl.gca().get_xlim(),[0,0],'k--',)
+            pl.plot(datamean.index[a:-b]/SPS,datamean[f'Q_Rx{j:d}'].values[a:-b],'x',label='Q Rx')
+            pl.plot(datamean.index[a:-b]/SPS,datamean[f'I_Rx{j:d}'].values[a:-b],'x',label='I Rx')
+            pl.xlim(3,datamean.index[-b]/SPS)
+            # pl.plot(pl.gca().get_xlim(),[0,0],'k--',)
             pl.ylabel('amplitude (-)')
             pl.xlabel('time (s)')
             pl.legend()
-            pl.title(ch)
+            if len(title)>0:
+                pl.title(title)
+            elif len(Rx_ch)>1:
+                pl.title('f{:.1f}Hz, ch{:s}'.format(params['f'],ch))
+            else:
+                pl.title('f{:.1f}Hz'.format(params['f']))
 
 def NormRxbyTx(datamean,Rx_ch,columns,tx=2):
     for i,ch in enumerate(Rx_ch):
@@ -294,8 +307,8 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
     
     
     # derive calibration parameters from automatic calibration using calibration coil
-    if autoCal:
-        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop=CheckCalibration(dataINS,datamean,params['f'],plot=plot)
+    if autoCal and dataINS.Cal.len>0:
+        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration(dataINS,datamean,params['f'],plot=plot)
 
     
         # Define transformation function
@@ -326,10 +339,16 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
         CalParams['I0']=np.array(calI0)[i_autoCal,:]
         CalParams['start']=start[i_autoCal]
         CalParams['stop']=stop[i_autoCal]
+        CalParams['on']=on[i_autoCal]
+        CalParams['off']=off[i_autoCal]
+    
+    elif dataINS.Cal.len==0:
+        print('No calibration stamps found!  Autocalibration not possible!!!')
+        params['autoCal']=False
     
     CalParams['A0']=A0
     CalParams['phase0']=phase0
-    
+
     return CalParams
 
 
@@ -360,7 +379,7 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
     
     # derive calibration parameters from automatic calibration using calibration coil
     if autoCal and dataINS.Cal.len>0:
-        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop=CheckCalibration_multiFreq(dataINS,datamean,params['freqs'],Rx_ch=Rx_ch,plot=plot)
+        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration_multiFreq(dataINS,datamean,params['freqs'],Rx_ch=Rx_ch,plot=plot)
 
     
         # Define transformation function
@@ -396,6 +415,8 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
         CalParams['I0']=np.array(calI0)[i_autoCal]
         CalParams['start']=start[i_autoCal]
         CalParams['stop']=stop[i_autoCal]
+        CalParams['on']=on[i_autoCal]
+        CalParams['off']=off[i_autoCal]
     elif dataINS.Cal.len==0:
         print('No calibration stamps found!  Autocalibration not possible!!!')
         params['autoCal']=False
@@ -636,7 +657,7 @@ def LockInADCrawfile(path,name, Tx_ch='ch2', Rx_ch=['ch1'],
 
 def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
                           flowpass=50,chunksize=19200,keep_HF_data=False,
-                          findFreq=True,i_Tx=3,i_blok=[],
+                          findFreq=True,i_Tx=3,i_blok=[],plot=True,
                           **kwargs):
     """
     Read raw data file in blocks and extract signal over LockIn with lowpass filter. Single frequency. 
@@ -702,7 +723,7 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
     
 
         
-        plot=True
+        
         threshold=0.5
         win_f0=100
         dt_min=0.2
@@ -1111,10 +1132,10 @@ def loadADCraw_multiFreq(file,SPS=19200,
 
 #%%  Sync INS/Laser and ADC
 
-def sync_ADC_INS(datamean,dataINS):
+def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
     
     try:
-        TOW=datamean.index/SPS+get_TOW0(dataINS)
+        TOW=datamean.index/SPS+get_TOW0(dataINS,iStart=iStart)+dT_start
         t = gps_datetime_np(dataINS.PINS1.GPSWeek[0],TOW)
         datamean['t']=t
         datamean['TOW']=TOW
@@ -1151,7 +1172,60 @@ gps_datetime_np=np.vectorize(gps_datetime, doc='Vectorized `gps_datetime`')
 
 
 
+#%% Code for signal to noise 
 
+
+
+def signalStrength(datamean,params,l_period=5):
+    l_period=5 # lenght of period after calibration for averaging 
+    
+    stop_t=params['CalParams']['stop']
+    
+    t_a=stop_t+0.5
+    t_b=t_a+5
+    
+    i_a=datamean.time.searchsorted(t_a)
+    i_b=datamean.time.searchsorted(t_b)
+    
+    
+    values_I=[get_values(datamean['I_Rx1'],i_a,i_b)]
+    values_Q=[get_values(datamean['Q_Rx1'],i_a,i_b)]
+    
+    
+    for t_on,t_off in zip(params['CalParams']['on'],params['CalParams']['off']):
+        i_a=datamean.time.searchsorted(t_on+0.1)
+        i_b=datamean.time.searchsorted(t_off-0.1)
+        values_I.append(get_values(datamean['I_Rx1'],i_a,i_b))
+        values_Q.append(get_values(datamean['Q_Rx1'],i_a,i_b))
+    
+    values_I=np.array(values_I)
+    values_I=np.array(values_I)
+    values_Q=np.array(values_Q)
+    values_Q=np.array(values_Q)
+    
+    ratios_Q=values_Q[0][2]/values_Q[1:][0]  
+    ratios_I=values_I[0][2]/values_I[1:][0]    
+    
+    print('Signal strength:\n---------------')    
+    print('I: Std: {:.6f}, max deviation: {:.6f}'.format(values_I[0][2],values_I[0][3]))   
+    print('Q: Std: {:.6f}, max deviation: {:.6f}'.format(values_Q[0][2],values_Q[0][3]))  
+    for i in range(1,len(params['CalParams']['on'])):
+        print('Cal point {:d}'.format(i)) 
+        print('\t Amplitude I: {:.6f} \nStd I Air/Amp. I: {:.6f}'.format(values_I[i][0],values_I[0][2]/values_I[i][0]))   
+        print('\t Amplitude Q: {:.6f} \nStd Q Air/Amp. Q: {:.6f}'.format(values_Q[i][0],values_Q[0][2]/values_Q[i][0]))  
+    
+    return ratios_I,ratios_Q,values_I,values_Q 
+
+
+
+    
+# get 
+def get_values(d,i_a,i_b):
+    I_med=d.iloc[i_a:i_b].median()
+    I_mean=d.iloc[i_a:i_b].mean()
+    I_std=d.iloc[i_a:i_b].std()
+    I_max=np.abs(d.iloc[i_a:i_b]-I_mean).max()
+    return I_med,I_mean,I_std, I_max
 
 
 
@@ -1523,7 +1597,7 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
          for i,ch in enumerate(Rx_ch):     
             calQ=(calQs[k,i,1:].transpose()-calQs[k,i,0])
             calI=(calIs[k,i,1:].transpose()-calIs[k,i,0])
-            g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
+            g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=plot)
             
             calQs2[k].append(calQ)
             calIs2[k].append(calI)
@@ -1533,7 +1607,7 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
             phis[k].append(phi)
     
     
-    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop
+    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off
     
 
 def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
@@ -1612,7 +1686,7 @@ def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
                 phis[k][i].append(phi)
     
     
-    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop
+    return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off
 
 
 
@@ -1827,7 +1901,8 @@ def find_missing(d,pr=True):   # check missing data
 
 
 def myfft(d):
-    fft= np.array([np.fft.rfft(d[:,1]),np.fft.rfft(d[:,2]),np.fft.rfft(d[:,3])])/len(d[:,1])
+    # fft= np.array([np.fft.rfft(d[:,i]),np.fft.rfft(d[:,2]),np.fft.rfft(d[:,3])])/len(d[:,1])
+    fft= np.array([np.fft.rfft(d[:,i]) for i in range(1,d.shape[1])])/len(d[:,1])
     freq= np.fft.rfftfreq(len(d[:,1]), d=1.0/SPS)
     return fft,freq
 
@@ -2167,7 +2242,7 @@ def plotraw3(d,title='',starttime=0,Chs=[1,2]):
     
     N=len(Chs)
     
-    fig,axs=pl.subplots(N,2, figsize=(8,8) )
+    fig,axs=pl.subplots(2,N, figsize=(8,8) )
     
     for i,ch in enumerate(Chs):
         ax=axs[0,i]
