@@ -65,7 +65,7 @@ class INSLASERdata:
     # extr_list=['PINS1','Laser']
     
     def __init__(self,filepath,name='',load=True, droplaserTow0=True,
-                 correct_Laser=True,distCenter=0, pitch0=0, roll0=0,laser_time_offset=0,c_pitch=1,c_roll=1):
+                 correct_Laser=True,distCenter=0, pitch0=0, roll0=0,laser_time_offset=0,c_pitch=1,c_roll=1,verbose=False):
         """
             Read GNSS and Laser data from .ubx data file. Additional methods are available for plotting and handling data.    
         
@@ -92,6 +92,12 @@ class INSLASERdata:
         
         self.keyList=_keyList_.copy()
         self.MSG_list=_MSG_list_.copy()
+        
+        
+        if verbose:
+            self.verbose=True
+        else:
+                self.verbose=False
         
         if load:
             self.loadData(correct_Laser=correct_Laser,droplaserTow0=droplaserTow0)
@@ -124,14 +130,14 @@ class INSLASERdata:
             if l[0]=='#':
                 continue
             elif l.find('$')!=-1:
-                Msg_key,data=parseNMEAfloat(l)
+                Msg_key,data=parseNMEAfloat(l,self.verbose)
                 
                 if Msg_key=='PINS1':
                     self.ToW=data[0]
 
                 if Msg_key=='Error':
                     
-                    Msg_key,data=parseNMEA(l)
+                    Msg_key,data=parseNMEA(l,self.verbose)
                     
                     if Msg_key=='Error':
                         self.corrupt.append(l)
@@ -148,7 +154,8 @@ class INSLASERdata:
                       self.corrupt.append(l)
                       continue
                 except ValueError:
-                    print("Message {:s} not in NMEA message list. Dropping it.".format(Msg_key))
+                    if self.verbose:
+                        print("Message {:s} not in NMEA message list. Dropping it.".format(Msg_key))
                     continue
                 
                 
@@ -157,13 +164,13 @@ class INSLASERdata:
                 
                 
             elif l.find('D ')!=-1:
-                self.LaserList.append(parseLaser(l)+(self.ToW,) )
+                self.LaserList.append(parseLaser(l,self.verbose)+(self.ToW,) )
             elif l.find('Cal')!=-1:
-                self.CalList.append(parseCalibration(l)+(self.ToW,) )    
+                self.CalList.append(parseCalibration(l,self.verbose)+(self.ToW,) )    
             elif l.find('Temp')!=-1:
-                self.TempList.append(parseTemp(l)+(self.ToW,) ) 
+                self.TempList.append(parseTemp(l,self.verbose)+(self.ToW,) ) 
             elif l.find('VBat')!=-1:
-                self.VBatList.append((parseVBat(l),self.ToW,) ) 
+                self.VBatList.append((parseVBat(l,self.verbose),self.ToW,) ) 
             elif l.find('SDwrite')!=-1:
                 self.SDwriteList.append((self.ToW,))  
             
@@ -382,7 +389,7 @@ def loadDataHeader(filepath):
 
 
 
-def parseNMEA(l):
+def parseNMEA(l,verbose=True):
     """
     l: string with data
     
@@ -404,16 +411,18 @@ def parseNMEA(l):
           try:
               a=np.array(l[start+len(Msg_key)+2:end].split(','))
           except:
-              print('Coud not parse valid NMEA string:', l)  
+              if verbose: 
+                  print('Coud not parse valid NMEA string:', l)  
               return 'Error',l 
     else:
-        print('Coud not parse string:', l)    
+        if verbose:   
+            print('Coud not parse valid NMEA string:', l)  
         return 'Error',l             
 
     return Msg_key,a
 
 
-def parseNMEAfloat(l):
+def parseNMEAfloat(l,verbose=True):
     """
     l: string with data
     
@@ -435,13 +444,13 @@ def parseNMEAfloat(l):
               # print('Coud not parse valid NMEA string:', l)  
               return 'Error',l 
     else:
-        # print('Coud not parse string:', l)    
+        # if verbose: print('Coud not parse string:', l)    
         return 'Error',l             
 
     return Msg_key,a
 
 
-def parseCalibration(l):
+def parseCalibration(l,verbose=True):
     """
     l: string with data
     
@@ -464,7 +473,8 @@ def parseCalibration(l):
         except:
                 on= False
                 ID=np.nan
-                print('coud not parse string:', l)
+                if verbose: 
+                    print('Coud not parse string:', l)
     elif l[:6]=='CalOff': 
             try:
                 on= False
@@ -472,7 +482,8 @@ def parseCalibration(l):
             except:
                 on= False
                 ID=np.nan
-                print('coud not parse string:', l)
+                if verbose: 
+                    print('Coud not parse string:', l)
     elif l[:6]=='CalEnd': 
             try:
                 on= False
@@ -480,7 +491,8 @@ def parseCalibration(l):
             except:
                 on= False
                 ID=np.nan
-                print('coud not parse string:', l)
+                if verbose: 
+                    print('Coud not parse string:', l)
     elif l[:8]=='CalStart': 
             try:
                 on= False
@@ -488,16 +500,18 @@ def parseCalibration(l):
             except:
                 on= False
                 ID=np.nan
-                print('coud not parse string:', l)
+                if verbose: 
+                    print('Coud not parse string:', l)
     else:
         ID= np.nan
         on= False
-        print('coud not parse string:', l)                 
+        if verbose: 
+            print('Coud not parse string:', l)                 
 
 
     return on,ID
 
-def parseTemp(l):
+def parseTemp(l,verbose=True):
     """
     l: string with data
     
@@ -518,17 +532,19 @@ def parseTemp(l):
                 print(e)
                 Temp= np.nan
                 ID=np.nan
-                print('coud not parse string:', l)
+                if verbose: 
+                    print('Coud not parse string:', l)
     
     else:
         ID= np.nan
         Temp= np.nan
-        print('coud not parse string:', l)                 
+        if verbose: 
+            print('Coud not parse string:', l)                 
 
 
     return Temp,ID
 
-def parseVBat(l):
+def parseVBat(l,verbose=True):
    
     """
     l: string with data
@@ -546,15 +562,17 @@ def parseVBat(l):
                 V= float(a[1])
         except:
                 V= np.nan
-                print('coud not parse string:', l)
+                if verbose: 
+                    print('Coud not parse string:', l)
     
     else:
         V= np.nan
-        print('coud not parse string:', l)               
+        if verbose: 
+            print('Coud not parse string:', l)               
 
     return V
 
-def parseLaser(l):
+def parseLaser(l,verbose=True):
     """
     l: string with data
     TOW: time of Week to append to message data
@@ -583,7 +601,8 @@ def parseLaser(l):
                 h= float(a[1])
             except:
                 h= np.nan
-                print('coud not parse string:', l)
+                if verbose: 
+                    print('Coud not parse string:', l)
         else:
             error=0
             try:
@@ -602,12 +621,14 @@ def parseLaser(l):
                 T= np.nan 
                 error=1
             if error:
-                print('coud not parse string:', l)
+                if verbose: 
+                    print('Coud not parse string:', l)
     else:
         h= np.nan
         signQ= np.nan
         T= np.nan 
-        print('coud not parse string:', l)                 
+        if verbose: 
+            print('Coud not parse string:', l)                 
 
 
     return h,signQ,T
@@ -673,7 +694,8 @@ def get_TOW0(data,iStart=2,PIN_start=8,dt=9000):
                     else:
                         iStart2= np.where(np.diff(data.PSTRB.TOW)>dt)[0][0]
                     start =data.PSTRB.TOW[iStart2]/1000
-               
+                    print('TW0: {:f}, PIN used for start: {:f} ,iStart: {:f}'.format(start, data.PSTRB.pin[iStart2],iStart2))
+                
                 except IndexError:
                    raise IndexError(f'No correct time stamp was found. All delta time <{dt:d} ms.', np.diff(data.PSTRB.TOW))
                        
@@ -681,8 +703,11 @@ def get_TOW0(data,iStart=2,PIN_start=8,dt=9000):
                 raise ValueError(f'Timestamp {iStart} was not on pin {PIN_start:d} of INS.', iStart)
         else:
             start =data.PSTRB.TOW[iStart]/1000
+            print('PIN used for start: {:d} ,iStrat: {:d}'.format(data.PSTRB.pin[iStart],iStart))
+            
     except (AttributeError, IndexError) :
             start =data.PINS1.TOW[0]
+            print('No PSTRB timestamps were found. Used first PINS1 datapoint as start time!')
     return start
 
 def get_t0(data,iStart=2,PIN_start=8,dt=9000):

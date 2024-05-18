@@ -22,14 +22,18 @@ from zoneinfo import ZoneInfo
 from scipy.optimize import curve_fit,least_squares
 
 from INSLASERdata import *
+import save_load as sl
 
-SPS= 19200
-ZoneInfo("UTC")
+
 
 # sys.path.append(r'C:\Users\Laktop')
 from emagpy_seaice import Problem
 from emagpy_seaice import invertHelper 
 
+
+# %% define variables
+SPS= 19200
+ZoneInfo("UTC")
 
 #%%  functions for laoding and handling data
 
@@ -39,7 +43,7 @@ def loadDataLEM(path,name):
 
 def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                    plot=False, plotINS=False,
-                   savefile=True,
+                   savefile=True,saveCSV=None,savePKL=None,
                      window=1920,freq=0,phase0=0,SPS=19200,flowpass=30,
                      autoCal=True,i_autoCal=0,i_cal=[],
                      INSkargs={},MultiFreq=False,n_freqs=3,iStart=2,dT_start=0,
@@ -56,9 +60,16 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
     file=path+'/ADC'+name+r'.csv'
     fileLASER=path+'/INS'+name+'.csv'
     if savefile:
+        saveCSV=True
+        savePKL=True
         fileOutput=path+'/LEM'+name+'.csv'
+        fileOutputPKL=path+'/LEM'+name+'.pkl'
     
-    
+    elif saveCSV==True:
+        savefile=True
+        fileOutput=path+'/LEM'+name+'.csv'
+    elif savePKL==True:
+        fileOutputPKL=path+'/LEM'+name+'.pkl'
     
     header=loadDataHeader(fileLASER)
     params.update( header)
@@ -103,8 +114,9 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         
         # sync ADC and INS/Laser
         #----------------------------
-        sync_ADC_INS(datamean,dataINS,iStart=iStart,dT_start=dT_start)
-        datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
+        params['TOW_ADC0']= sync_ADC_INS(datamean,dataINS,iStart=iStart,dT_start=dT_start)
+        
+
         
         
         # Calibrate ADC
@@ -167,8 +179,8 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         
         # sync ADC and INS/Laser
         #----------------------------
-        sync_ADC_INS(datamean,dataINS,iStart=iStart,dT_start=dT_start)
-        datamean['time']=datamean.TOW-datamean.TOW.iloc[0]
+        params['TOW_ADC0']= sync_ADC_INS(datamean,dataINS,iStart=iStart,dT_start=dT_start)
+        
         
         
         # Calibrate ADC
@@ -212,6 +224,9 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         except KeyError as e:
             print("Can't find data in datamean to plot:") 
             print(e)
+    
+    if savePKL:   
+       sl.save_pkl([datamean, dataINS,params], fileOutputPKL)
         
     return datamean, dataINS,params
 
@@ -433,7 +448,7 @@ def write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch,n_freqs)
     file=open(fileOutput,'w')
 
     file.write("# Signal extracted with LockIn form raw data\n")
-    file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),params['version']))
+    file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),params['pyLEM_version']))
     file.write("# Freqeuncies LockIn: {:} Hz\n".format(str(params['freqs'])))
     file.write("# SPS: {:}\n\n".format(SPS))
     file.write("# Frequency low pass: {:}\n".format(params['flowpass']))
@@ -470,7 +485,7 @@ def write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
     file=open(fileOutput,'w')
 
     file.write("# Signal extracted with LockIn form raw data\n")
-    file.write("# Processing date: {:} \tScript version: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),params['version']))
+    file.write("# Processing date: {:} \tScript version: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),params['pyLEM_version']))
     file.write("# Freqeuncy LockIn: {:} Hz\n".format(params['f']))
     file.write("# Phase LockIn: {:}\n".format(params['phase0']))
     file.write("# SPS: {:}\n\n".format(params['SPS']))
@@ -1135,10 +1150,15 @@ def loadADCraw_multiFreq(file,SPS=19200,
 def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
     
     try:
-        TOW=datamean.index/SPS+get_TOW0(dataINS,iStart=iStart)+dT_start
+        TOW0=get_TOW0(dataINS,iStart=iStart)
+        
+        TOW=datamean.index/SPS+TOW0+dT_start
+        print('TOW0 ADC: {:f}, dT_start: {:f}'.format(TOW0,dT_start))
+        
         t = gps_datetime_np(dataINS.PINS1.GPSWeek[0],TOW)
         datamean['t']=t
         datamean['TOW']=TOW
+        datamean['time']=datamean.TOW-TOW0
     
         # interpolate PINS1 data
         interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'elevation',])
@@ -1148,6 +1168,8 @@ def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
     except AttributeError: 
          print("Can't find right INS data. Continue without them.")
          datamean['TOW']=datamean.index/SPS
+         TOW0=0
+    return TOW0
         
 def interpolData(data,datamean,proplist):
     ind=np.searchsorted(data.TOW,datamean.TOW)
@@ -1235,7 +1257,13 @@ def get_values(d,i_a,i_b):
 # def getCalConstants(datamean,caltimes,start,stop,off,on,ID):
 
 def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
-    TOW0=get_TOW0(dataINS)
+    
+    try:
+        TOW0=TOW_ADC0
+    except NameError:
+        TOW0=get_TOW0(dataINS)
+    
+    
     # find start and stop   
     start=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==1)]-TOW0
     stop=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==2)]-TOW0
