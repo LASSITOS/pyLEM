@@ -52,24 +52,14 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
     
     # Create dictionary containing parameters
     params=locals()  # add all function arguments to dictionary
-    version='v1.2'
+    version='v1.3'
     params['pyLEM_version']=version
     
     
     
     file=path+'/ADC'+name+r'.csv'
     fileLASER=path+'/INS'+name+'.csv'
-    if savefile:
-        saveCSV=True
-        savePKL=True
-        fileOutput=path+'/LEM'+name+'.csv'
-        fileOutputPKL=path+'/LEM'+name+'.pkl'
-    
-    elif saveCSV==True:
-        savefile=True
-        fileOutput=path+'/LEM'+name+'.csv'
-    elif savePKL==True:
-        fileOutputPKL=path+'/LEM'+name+'.pkl'
+
     
     header=loadDataHeader(fileLASER)
     params.update( header)
@@ -81,6 +71,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
     except FileNotFoundError:
         print('Lase file: ',file, ' can not be loaded')
         noLASERfile=True
+    
     
     
     print('Reading file: ',file)
@@ -95,12 +86,10 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                                                                freqs=[1079.0228, 3900.1925, 8207.628],
                                                                **kwargs)    
         
-        
-        
         params['start_ind']=start_ind
-        params['flowpass']=flowpass
         params['freqs']=freqs
-        
+        params['i_missing']=i_missing
+        params['gap']=gap
         
         # To do: add parameters to params
         
@@ -122,35 +111,10 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         # Calibrate ADC
         #----------------------------
         CalParams=Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,n_freqs=n_freqs,autoCal=autoCal,i_autoCal=i_autoCal,plot=plot)
-        for i,ch in enumerate(Rx_ch):
-            columns.extend([f'I_Rx{i+1:d}_f{k:d}' for k in range(1,len(freqs)+1)])
-            columns.extend([f'Q_Rx{i+1:d}_f{k:d}' for k in range(1,len(freqs)+1)])
         params['CalParams']=CalParams
         
         
-        if savefile:
-            # write file header
-            write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch,len(freqs))
-            
-            
-            #save datamean to file
-            #----------------------------
-            # columns to save
-            columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
-                      'signQ', 'TempLaser' ] #
-            
-            for i in range(1,2+len(Rx_ch)):    
-                columns.extend([f'Q_ch{i:d}_f{k:d}' for k in range(1,len(freqs)+1)])
-                columns.extend([f'I_ch{i:d}_f{k:d}' for k in range(1,len(freqs)+1)])
 
-            
-            try:
-                datamean.to_csv(fileOutput,mode='a',index=True,header=True,columns=columns)
-            except Exception as e: 
-                    print("error. Can't save data ")
-                    print(e)
-                    print('Columns to write:', columns)
-                    print('Columns in datamean:', datamean.keys())
     
     
     else:  
@@ -166,6 +130,9 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         # params={}
         params['f']=f
         params['phase0']=phase0
+        params['i_missing']=i_missing
+        params['gap']=gap
+        
         print(f'Freq: {f:.2f} Hz')
         print(f'Phase lockIn: {phase0:.2f} rad')
         
@@ -186,48 +153,50 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         # Calibrate ADC
         #----------------------------
         CalParams=Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=autoCal,i_autoCal=i_autoCal,plot=plot)
-        for i,ch in enumerate(Rx_ch):
-            columns.extend([f'I_Rx{i+1:d}',f'Q_Rx{i+1:d}'])
         params['CalParams']=CalParams
         
         
-        if savefile:
-            # write file header
-            write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch)
-            
-            
-            #save datamean to file
-            #----------------------------
-            # columns to save
-            columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
-                      'signQ', 'TempLaser',
-                      'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #
-            
-            
-            try:
-                datamean.to_csv(fileOutput,mode='a',index=True,header=True,columns=columns)
-            except Exception as e: 
-                    print("error. Can't save data ")
-                    print(e)
-                    print('Columns to write:', columns)
-                    print('Columns in datamean:', datamean.keys())
     
-    
-    if plotINS:
+
         
+
+    
+    if plotINS: 
         plot_summary(dataINS,getextent(dataINS),heading=False)
     
     if plot:
-        
         try:
             plot_QandI(datamean,params,Rx_ch,MultiFreq)
         except KeyError as e:
             print("Can't find data in datamean to plot:") 
             print(e)
     
+    
+    # save files
+    
+    
+    
+    
+    
+    # save files
+    
+    
+    
+    
+    
+    
+    
+    
+    # save files
+    if savefile:
+        saveCSV=True
+        savePKL=True
+    if saveCSV:
+        save_LEM_csv(datamean,params,columns=columns,MultiFreq=MultiFreq)
     if savePKL:   
        sl.save_pkl([datamean, dataINS,params], fileOutputPKL)
-        
+    
+       
     return datamean, dataINS,params
 
 
@@ -280,23 +249,22 @@ def NormRxbyTx(datamean,Rx_ch,columns,tx=2):
         j=i+1
         datamean[f'A_Rx{j:d}']=datamean[f'A{rx:d}']/datamean[f'A{tx:d}']
         datamean[f'phase_Rx{j:d}']=datamean[f'phase{rx:d}']-datamean[f'phase{tx:d}']   
-        columns.append(f'A_Rx{j:d}')
-        columns.append(f'phase_Rx{j:d}')
+        # columns.append(f'A_Rx{j:d}')
+        # columns.append(f'phase_Rx{j:d}')
   
 def NormRxbyTx_multi(datamean,Rx_ch,columns,n_freqs,tx=2):
     for i,ch in enumerate(Rx_ch):
-        rx=int(ch[2:])
         j=i+1
         for k in range(1,n_freqs+1):
             
             datamean[f'A_Rx{j:d}_f{k:d}']=datamean[f'A_Rx{j:d}_f{k:d}']/datamean[f'A_Tx_f{k:d}']
             datamean[f'phase_Rx{j:d}_f{k:d}']=datamean[f'phase_Rx{j:d}_f{k:d}']-datamean[f'phase_Tx_f{k:d}']   
             
-            columns.append(f'A_Rx{j:d}_f{k:d}')
-            columns.append(f'phase_Rx{j:d}_f{k:d}')      
+        #     columns.append(f'A_Rx{j:d}_f{k:d}')
+        #     columns.append(f'phase_Rx{j:d}_f{k:d}')      
        
-        columns.append(f'A_Tx_f{k:d}')
-        columns.append(f'phase_Tx_f{k:d}')  
+        # columns.append(f'A_Tx_f{k:d}')
+        # columns.append(f'phase_Tx_f{k:d}')  
     
    
 def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=False):
@@ -441,7 +409,79 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
     
     return CalParams
 
+def save_LEM_csv(datamean,params,columns=[],fileOutput=''):
+        
+    if len(fileOutput)==0:
+        fileOutput=params['path']+'/LEM'+params['name']+'.csv'
+        
+    if params['MultiFreq']:
+        freqs=params['freqs']
+        # write file header
+        write_file_header_multi(fileOutput,params,
+                                  params['i_missing'],params['gap'],
+                                  params['Tx_ch'],params['Rx_ch'],
+                                  len(freqs))
+        
+        
+        #save datamean to file
+        #----------------------------
+        # columns to save
+        columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
+                  'signQ', 'TempLaser' ] #
+        
+        for i,ch in enumerate(params['Rx_ch']):
 
+            columns.extend([f'I_Rx{i+1:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+            columns.extend([f'Q_Rx{i+1:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+            columns.extend([f'A_Rx{i+1:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+            columns.extend([f'phase_Rx{i+1:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+            columns.append(f'A_Tx_f{k:d}')
+            columns.append(f'phase_Tx_f{k:d}') 
+        
+        for i in range(1,2+len(params['Rx_ch'])):    
+            columns.extend([f'Q_ch{i:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+            columns.extend([f'I_ch{i:d}_f{k:d}' for k in range(1,len(freqs)+1)])
+
+            
+    else: # SINGLE FREQUENCY
+        # write file header
+        write_file_header(fileOutput,params,
+                          params['i_missing'],params['gap'],
+                          params['Tx_ch'],params['Rx_ch'])
+        
+        
+        #save datamean to file
+        #----------------------------
+        # columns to save
+        columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
+                  'signQ', 'TempLaser',
+                  'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #
+    
+
+        for i,ch in enumerate(params['Rx_ch']):
+            columns.extend([f'I_Rx{i+1:d}',f'Q_Rx{i+1:d}',f'A_Rx{i+1:d}',f'phase_Rx{i+1:d}'])
+
+            
+    # remove columns to save that are not in datamean
+    for c in columns:
+        if not (datamean.keys()==c).any():
+            columns.remove(c)
+            print('Column not in datamean:', c) 
+            
+    # remove duplicate entries
+    res = []
+    [res.append(x) for x in columns if x not in res]
+    columns=res
+            
+    try:
+        datamean.to_csv(fileOutput,mode='a',index=True,header=True,columns=columns)
+    except Exception as e: 
+            print("error. Can't save data ")
+            print(e)
+            print('Columns to write:', columns)
+            print('Columns in datamean:', datamean.keys()) 
+            
+            
 
 def write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch,n_freqs):
 
@@ -476,8 +516,6 @@ def write_file_header_multi(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch,n_freqs)
     file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
     file.write("##\n")
     file.close()
-
-
 
 
 def write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
@@ -1145,6 +1183,43 @@ def loadADCraw_multiFreq(file,SPS=19200,
 
 
 
+#%% Code for comparing data along tansect
+
+
+def interpolData_d(data,datamean,proplist):
+    """
+    Function to interpolate Drillholes data to LEM data along a tansect. 
+    Data are interpolated according to distance and inserted as columns in datamean pandas DataFrame.
+    
+    Parameters
+    ----------
+    data : Pandas Dataframe, 
+        E.G: Drillholes data .
+    datamean : Pandas Dataframe
+        LEM datamean data.
+    proplist : list of strings
+        List of parameters to intepolate.
+
+    Returns
+    -------
+    None.
+
+    """
+    d1=np.array(data.d)
+    d2=np.array(datamean.d)
+    
+    ind=np.searchsorted(d1,d2)
+    
+    ind[ind>len(d1)-1]=len(d1)-1
+    ind[ind==0]=1
+    d_dist=(d2-d1[ind])/(d1[ind]-d1[ind-1])
+    
+    for p in proplist:
+        x=np.array(getattr(data,p))
+        datamean[p]=x[ind]+(x[ind]-x[ind-1])*d_dist
+
+
+
 #%%  Sync INS/Laser and ADC
 
 def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
@@ -1184,6 +1259,9 @@ def interpolData(data,datamean,proplist):
 
 
 gps_datetime_np=np.vectorize(gps_datetime, doc='Vectorized `gps_datetime`')
+
+
+
 
 
 
