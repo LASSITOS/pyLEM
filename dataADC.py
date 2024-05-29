@@ -35,7 +35,7 @@ from emagpy_seaice import invertHelper
 SPS= 19200
 ZoneInfo("UTC")
 
-#%%  functions for laoding and handling data
+#%%  functions for loading and handling data + Postprocessing
 
 def loadDataLEM(path,name):
     file=path+'/LEM'+name+'.csv'
@@ -172,20 +172,6 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
             print(e)
     
     
-    # save files
-    
-    
-    
-    
-    
-    # save files
-    
-    
-    
-    
-    
-    
-    
     
     # save files
     if savefile:
@@ -201,47 +187,15 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
 
 
 
-def plot_QandI(datamean,params,Rx_ch,MultiFreq,title=''):
 
-    
-    if MultiFreq:
-        for i,ch in enumerate(Rx_ch):
-            j=i+1
-            pl.figure()
-            n_freqs=len(params['freqs'])
-            for k,f in enumerate(params['freqs']):
-                ax=pl.subplot(n_freqs,1,k+1)
-            
-                ax.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}_f{k+1:d}'],'x',label='Q Rx')
-                ax.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}_f{k+1:d}'],'x',label='I Rx')
-                ax.set_xlim(3,datamean.index[-1]/SPS-2)
-                ax.plot(ax.get_xlim(),[0,0],'k--',)
-                ax.set_ylabel('amplitude (-)')
-                ax.set_xlabel('time (s)')
-                ax.legend()
-                pl.title(f'{ch:s}, f{k+1:d}:{f:.1f}Hz')
-    else:
-        #cut first 3 second and last second
-        
-        a=datamean.index.searchsorted(3*SPS)
-        b=datamean.index.searchsorted(1*SPS)
-        
-        for i,ch in enumerate(Rx_ch):
-            j=i+1
-            pl.figure()
-            pl.plot(datamean.index[a:-b]/SPS,datamean[f'Q_Rx{j:d}'].values[a:-b],'x',label='Q Rx')
-            pl.plot(datamean.index[a:-b]/SPS,datamean[f'I_Rx{j:d}'].values[a:-b],'x',label='I Rx')
-            pl.xlim(3,datamean.index[-b]/SPS)
-            # pl.plot(pl.gca().get_xlim(),[0,0],'k--',)
-            pl.ylabel('amplitude (-)')
-            pl.xlabel('time (s)')
-            pl.legend()
-            if len(title)>0:
-                pl.title(title)
-            elif len(Rx_ch)>1:
-                pl.title('f{:.1f}Hz, ch{:s}'.format(params['f'],ch))
-            else:
-                pl.title('f{:.1f}Hz'.format(params['f']))
+
+
+
+
+
+
+
+
 
 def NormRxbyTx(datamean,Rx_ch,columns,tx=2):
     for i,ch in enumerate(Rx_ch):
@@ -553,160 +507,168 @@ def write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
     file.write("##\n")
     file.close()
 
-def LockInADCrawfile(path,name, Tx_ch='ch2', Rx_ch=['ch1'],
-                     plot=False,
-                     window=1920,freq=1063.3985,phase0=0,SPS=19200,flowpass=50,i_cal=[],
-                     **kwargs):
-    '''
 
-    Parameters
-    ----------
-    path : TYPE
-        DESCRIPTION.
-    name : TYPE
-        DESCRIPTION.
-    Tx_ch : TYPE, optional
-        DESCRIPTION. The default is 'ch3'.
-    Rx_ch : TYPE, optional
-        DESCRIPTION. The default is ['ch1','ch2'].
-    plot : TYPE, optional
-        DESCRIPTION. The default is False.
-    window : TYPE, optional
-        DESCRIPTION. The default is 1920.
-    freq : TYPE, optional
-        DESCRIPTION. The default is 1063.3985.
-    phase0 : TYPE, optional
-        DESCRIPTION. The default is 0.
-    SPS : TYPE, optional
-        DESCRIPTION. The default is 19200.
-    flowpass : TYPE, optional
-        DESCRIPTION. The default is 50.
-    i_cal : TYPE, optional
-        DESCRIPTION. The default is [].
-    **kwargs : TYPE
-        DESCRIPTION.
+def trim_data(t0,t1,datamean,params):
+    lims_i=[np.searchsorted(datamean.time.values,t0),np.searchsorted(datamean.time.values,t1)]
+    return datamean.iloc[lims_i[0]:lims_i[1]].copy()
+    
 
-    Returns
-    -------
-    datamean : TYPE
-        DESCRIPTION.
+# %% load raw data and Lock-In filter
 
-    '''
+# def LockInADCrawfile(path,name, Tx_ch='ch2', Rx_ch=['ch1'],
+#                      plot=False,
+#                      window=1920,freq=1063.3985,phase0=0,SPS=19200,flowpass=50,i_cal=[],
+#                      **kwargs):
+#     '''
+
+#     Parameters
+#     ----------
+#     path : TYPE
+#         DESCRIPTION.
+#     name : TYPE
+#         DESCRIPTION.
+#     Tx_ch : TYPE, optional
+#         DESCRIPTION. The default is 'ch3'.
+#     Rx_ch : TYPE, optional
+#         DESCRIPTION. The default is ['ch1','ch2'].
+#     plot : TYPE, optional
+#         DESCRIPTION. The default is False.
+#     window : TYPE, optional
+#         DESCRIPTION. The default is 1920.
+#     freq : TYPE, optional
+#         DESCRIPTION. The default is 1063.3985.
+#     phase0 : TYPE, optional
+#         DESCRIPTION. The default is 0.
+#     SPS : TYPE, optional
+#         DESCRIPTION. The default is 19200.
+#     flowpass : TYPE, optional
+#         DESCRIPTION. The default is 50.
+#     i_cal : TYPE, optional
+#         DESCRIPTION. The default is [].
+#     **kwargs : TYPE
+#         DESCRIPTION.
+
+#     Returns
+#     -------
+#     datamean : TYPE
+#         DESCRIPTION.
+
+#     '''
     
-    file=path+r'\\'+name+r'.csv'
-    savefile=path+'\\'+name+r'LockIn.csv'
-    version='v1.0'
+#     file=path+r'\\'+name+r'.csv'
+#     savefile=path+'\\'+name+r'LockIn.csv'
+#     version='v1.0'
     
     
-    print('Reading file: ',file)
-    datamean, i_missing, gap,f,phase0=loadADCraw_singleFreq(file,
-                                                   f=freq,phase0=phase0,SPS=SPS,
-                                                   flowpass=flowpass,window=window,keep_HF_data=False,
-                                                   i_Tx=int(Tx_ch[2:]),
-                                                   **kwargs)    
+#     print('Reading file: ',file)
+#     datamean, i_missing, gap,f,phase0=loadADCraw_singleFreq(file,
+#                                                    f=freq,phase0=phase0,SPS=SPS,
+#                                                    flowpass=flowpass,window=window,keep_HF_data=False,
+#                                                    i_Tx=int(Tx_ch[2:]),
+#                                                    **kwargs)    
     
-    print(f'Freq: {f:.2f} Hz')
-    print(f'Phase: {phase0:.2f} rad')
+#     print(f'Freq: {f:.2f} Hz')
+#     print(f'Phase: {phase0:.2f} rad')
     
-    tx=int(Tx_ch[2:])
-    columns=[]
+#     tx=int(Tx_ch[2:])
+#     columns=[]
     
-    # normalize Rx by Tx
-    for i,ch in enumerate(Rx_ch):
-        rx=int(ch[2:])
-        j=i+1
-        datamean[f'A_Rx{j:d}']=datamean[f'A{rx:d}']/datamean[f'A{tx:d}']
-        datamean[f'phase_Rx{j:d}']=datamean[f'phase{rx:d}']-datamean[f'phase{tx:d}']   
-        columns.append(f'A_Rx{j:d}')
-        columns.append(f'phase_Rx{j:d}')
+#     # normalize Rx by Tx
+#     for i,ch in enumerate(Rx_ch):
+#         rx=int(ch[2:])
+#         j=i+1
+#         datamean[f'A_Rx{j:d}']=datamean[f'A{rx:d}']/datamean[f'A{tx:d}']
+#         datamean[f'phase_Rx{j:d}']=datamean[f'phase{rx:d}']-datamean[f'phase{tx:d}']   
+#         columns.append(f'A_Rx{j:d}')
+#         columns.append(f'phase_Rx{j:d}')
 
 
-    A0,phase0=Calibrate(datamean,Rx_ch,i_cal)
+#     A0,phase0=Calibrate(datamean,Rx_ch,i_cal)
  
     
-    # write file header
-    file=open(savefile,'w')
+#     # write file header
+#     file=open(savefile,'w')
     
-    file.write("# Signal extracted with LockIn form raw data\n")
-    file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),version))
-    file.write("# Freqeuncy LockIn: {:} Hz\n".format(freq))
-    file.write("# Phase LockIn: {:}\n".format(phase0))
-    file.write("# SPS: {:}\n\n".format(SPS))
-    file.write("# Frequency low pass: {:}\n".format(flowpass))
-    file.write("# Averaging window size: {:}\n".format(window))
-    file.write("# TxChannel: {:}\n".format(Tx_ch))
-    file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
-    if i_cal!=[]:
-        file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
-        for i,ch in enumerate(Rx_ch):
-            file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,A0[i],i+1,phase0[i]))
-    else:
-        file.write("# No calibration")
+#     file.write("# Signal extracted with LockIn form raw data\n")
+#     file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),version))
+#     file.write("# Freqeuncy LockIn: {:} Hz\n".format(freq))
+#     file.write("# Phase LockIn: {:}\n".format(phase0))
+#     file.write("# SPS: {:}\n\n".format(SPS))
+#     file.write("# Frequency low pass: {:}\n".format(flowpass))
+#     file.write("# Averaging window size: {:}\n".format(window))
+#     file.write("# TxChannel: {:}\n".format(Tx_ch))
+#     file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
+#     if i_cal!=[]:
+#         file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
+#         for i,ch in enumerate(Rx_ch):
+#             file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,A0[i],i+1,phase0[i]))
+#     else:
+#         file.write("# No calibration")
         
-    file.write("#\n")
-    file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
-    file.write("##\n")
-    file.close()
+#     file.write("#\n")
+#     file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
+#     file.write("##\n")
+#     file.close()
     
-    # columns to save
-    columns+=[ 'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #'t', 'TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  'signQ', 'TempLaser',
+#     # columns to save
+#     columns+=[ 'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #'t', 'TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  'signQ', 'TempLaser',
     
-    #save to file
-    try:
-        datamean.to_csv(savefile,mode='a',index=True,header=True,columns=columns)
-    except Exception as e: 
-            print("error. Can't save data ")
-            print(e)
-            print('Columns to write:', columns)
-            print('Columns to in datamean:', datamean.keys())
+#     #save to file
+#     try:
+#         datamean.to_csv(savefile,mode='a',index=True,header=True,columns=columns)
+#     except Exception as e: 
+#             print("error. Can't save data ")
+#             print(e)
+#             print('Columns to write:', columns)
+#             print('Columns to in datamean:', datamean.keys())
     
-    if plot:
-        for i,ch in enumerate(Rx_ch):
-            rx=int(ch[2:])
-            j=i+1
-            pl.figure()
-            pl.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}'],'x',label='Q Rx')
-            pl.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}'],'x',label='I Rx')
-            pl.ylabel('amplitude (-)')
-            pl.xlabel('time (s)')
-            pl.legend()
-            pl.title(ch)
+#     if plot:
+#         for i,ch in enumerate(Rx_ch):
+#             rx=int(ch[2:])
+#             j=i+1
+#             pl.figure()
+#             pl.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}'],'x',label='Q Rx')
+#             pl.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}'],'x',label='I Rx')
+#             pl.ylabel('amplitude (-)')
+#             pl.xlabel('time (s)')
+#             pl.legend()
+#             pl.title(ch)
         
-            pl.figure()
-            pl.plot(datamean.index/SPS,datamean[f'A{rx:d}'],'x', label='Amplitude Rx signal')
-            pl.plot(datamean.index/SPS,datamean[f'Q{rx:d}'],'x', label='Quadr Rx')
-            pl.plot(datamean.index/SPS,datamean[f'I{rx:d}'],'x', label='Inph Rx')
-            pl.ylabel('amplitude (-)')
-            pl.xlabel('time (s)')
-            pl.legend()
-            pl.title(ch)
+#             pl.figure()
+#             pl.plot(datamean.index/SPS,datamean[f'A{rx:d}'],'x', label='Amplitude Rx signal')
+#             pl.plot(datamean.index/SPS,datamean[f'Q{rx:d}'],'x', label='Quadr Rx')
+#             pl.plot(datamean.index/SPS,datamean[f'I{rx:d}'],'x', label='Inph Rx')
+#             pl.ylabel('amplitude (-)')
+#             pl.xlabel('time (s)')
+#             pl.legend()
+#             pl.title(ch)
 
-        pl.figure()
-        pl.plot(datamean.index/SPS,datamean[f'A{tx:d}'],'x', label='Amplitude Tx')
-        pl.plot(datamean.index/SPS,datamean[f'Q{tx:d}'],'x', label='Quadr Tx')
-        pl.plot(datamean.index/SPS,datamean[f'I{tx:d}'],'x', label='Inph Tx')
-        pl.ylabel('amplitude (-)')
-        pl.xlabel('time (s)')
-        pl.legend()
-        pl.title(Tx_ch)
+#         pl.figure()
+#         pl.plot(datamean.index/SPS,datamean[f'A{tx:d}'],'x', label='Amplitude Tx')
+#         pl.plot(datamean.index/SPS,datamean[f'Q{tx:d}'],'x', label='Quadr Tx')
+#         pl.plot(datamean.index/SPS,datamean[f'I{tx:d}'],'x', label='Inph Tx')
+#         pl.ylabel('amplitude (-)')
+#         pl.xlabel('time (s)')
+#         pl.legend()
+#         pl.title(Tx_ch)
         
         
-        pl.figure()
-        ax=pl.subplot(211)
-        ax2=pl.subplot(212)
-        for i,ch in enumerate(Rx_ch):
-            rx=int(ch[2:])
-            j=i+1
-            ax.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}'],'x',label=ch)
-            ax2.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}'],'x',label=ch)
-        ax.set_ylabel('Quadrature (-)')
-        ax.set_xlabel('time (s)')
-        ax2.set_ylabel('InPhase (-)')
-        ax2.set_xlabel('time (s)')
-        ax.legend()
-        ax2.legend()
+#         pl.figure()
+#         ax=pl.subplot(211)
+#         ax2=pl.subplot(212)
+#         for i,ch in enumerate(Rx_ch):
+#             rx=int(ch[2:])
+#             j=i+1
+#             ax.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}'],'x',label=ch)
+#             ax2.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}'],'x',label=ch)
+#         ax.set_ylabel('Quadrature (-)')
+#         ax.set_xlabel('time (s)')
+#         ax2.set_ylabel('InPhase (-)')
+#         ax2.set_xlabel('time (s)')
+#         ax.legend()
+#         ax2.legend()
     
-    return datamean
+#     return datamean
 
 def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
                           flowpass=50,chunksize=19200,keep_HF_data=False,
@@ -1182,8 +1144,231 @@ def loadADCraw_multiFreq(file,SPS=19200,
     return datamean, i_missing, gap,start_ind,freqs
 
 
+#%% Plots for quality check of processing data
 
-#%% Code for comparing data along tansect
+
+def plot_QandI(datamean,params,Rx_ch,MultiFreq,title=''):
+
+    
+    if MultiFreq:
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+            pl.figure()
+            n_freqs=len(params['freqs'])
+            for k,f in enumerate(params['freqs']):
+                ax=pl.subplot(n_freqs,1,k+1)
+            
+                ax.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}_f{k+1:d}'],'x',label='Q Rx')
+                ax.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}_f{k+1:d}'],'x',label='I Rx')
+                ax.set_xlim(3,datamean.index[-1]/SPS-2)
+                ax.plot(ax.get_xlim(),[0,0],'k--',)
+                ax.set_ylabel('amplitude (-)')
+                ax.set_xlabel('time (s)')
+                ax.legend()
+                pl.title(f'{ch:s}, f{k+1:d}:{f:.1f}Hz')
+    else:
+        #cut first 3 second and last second
+        
+        a=datamean.index.searchsorted(3*SPS)
+        b=datamean.index.searchsorted(1*SPS)
+        
+        for i,ch in enumerate(Rx_ch):
+            j=i+1
+            pl.figure()
+            pl.plot(datamean.index[a:-b]/SPS,datamean[f'Q_Rx{j:d}'].values[a:-b],'x',label='Q Rx')
+            pl.plot(datamean.index[a:-b]/SPS,datamean[f'I_Rx{j:d}'].values[a:-b],'x',label='I Rx')
+            pl.xlim(3,datamean.index[-b]/SPS)
+            # pl.plot(pl.gca().get_xlim(),[0,0],'k--',)
+            pl.ylabel('amplitude (-)')
+            pl.xlabel('time (s)')
+            pl.legend()
+            if len(title)>0:
+                pl.title(title)
+            elif len(Rx_ch)>1:
+                pl.title('f{:.1f}Hz, ch{:s}'.format(params['f'],ch))
+            else:
+                pl.title('f{:.1f}Hz'.format(params['f']))
+
+
+
+
+def plot_QIandH(datamean,params,title=''):
+    
+    fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+    
+    if len(title)>0:
+        ax.set_title(title)
+    else:
+        ax.set_title('name:{:s}, f={:.2f} kHz'.format(params['name'],params['f']))
+        
+        
+        
+    ax.plot(datamean2.time,datamean2.Q_Rx1,'x')
+    ax1=ax.twinx()
+    ax1b=ax.twinx()
+    ax1b.spines.right.set_position(("axes", 1.2))
+    
+    ax1.plot(datamean2.time,datamean2.h_Laser,'--k')
+    ax1b.plot(datamean2.time,datamean2.h_GPS-datamean2.h_Laser,'--b')
+    ax.set_ylabel('amplitude Q (ppt)')
+    pl.xlabel('time (s)')
+    ax1.set_ylabel('h Laser (m)')
+    ax1b.set_ylabel('h Laser - h GPS (m)')
+    ax1.yaxis.label.set_color('k')
+    ax1b.yaxis.label.set_color('b')
+    
+    
+    ax.set_ylim(-0.1,1)
+    
+    ax3=ax2.twinx()
+    ax3b=ax2.twinx()
+    ax3b.spines.right.set_position(("axes", 1.2))
+    
+    ax2.plot(datamean2.time,datamean2.I_Rx1,'x')
+    ax3.plot(datamean2.time,datamean2.h_Laser,'--k')
+    ax3b.plot(datamean2.time,datamean2.h_GPS-datamean2.h_Laser,'--b')
+    ax2.set_ylabel('amplitude I(ppt)')
+    ax3.set_xlabel('time (s)')
+    ax3.set_ylabel('h Laser (m)')
+    ax3b.set_ylabel('h Laser - h GPS (m)')
+    ax3.yaxis.label.set_color('k')
+    ax3b.yaxis.label.set_color('b')
+    ax2.set_ylim(-0.04,1)
+    pl.tight_layout()
+    
+    return fig
+
+#%% Code for inverting data and fit to climbs 
+
+
+
+
+
+def Fit_climbs(datamean,params,
+               t_str,t_stp, h_tot,w_depth=[],shallow=True,
+               w_cond=2408,d_coils=2.027,
+               plot=True):
+
+    lims=[]
+    
+    for i,[st,stp] in enumerate(zip(t_str,t_stp)):
+        lims_i=[np.searchsorted(datamean.time.values,st),np.searchsorted(datamean.time.values,stp)]
+        lims.append(lims_i)
+    lims2=np.array([datamean.index[np.array(lims)[:,0]],datamean.index[np.array(lims)[:,1]]]).transpose()
+    
+    datamean4=datamean.iloc[lims[0][0]:lims[0][1]].copy()
+    for i in range(1,len(t_stp)):
+        datamean4=pd.concat([datamean4,datamean.iloc[lims[i][0]:lims[i][1]].copy()])
+        
+    
+    datamean4['h_tot_ref']=datamean4.h_Laser.values
+    datamean4['w_depth_ref']=0
+    for i,l in enumerate(lims2):
+        datamean4.loc[lims2[i,0]:lims2[i,1],'h_tot_ref']+=h_tot[i]
+        datamean4.loc[lims2[i,0]:lims2[i,1],'w_depth_ref']=w_depth[i]
+    datamean4['w_depth_ref']+=datamean4['h_tot_ref']
+
+    if shallow:
+        emag1=EMagPy_forwardmanualdata(datamean4.h_Laser.values+np.mean(h_tot[i]),[freq],
+                                       d_coils=d_coils,plot=plot,cond=w_cond)
+    else:
+        emag2=EMagPy_forwardmanualdata_shallow(datamean4['w_depth_ref'],datamean4['h_tot_ref'],
+                                               [freq],
+                                               d_coils=d_coils,
+                                               plot=plot,cond=[w_cond,0])
+
+
+
+
+
+
+def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
+
+    # parameters for the synthetic model
+    nlayer = 2 # number of layers
+    depths =h_water[:,None] 
+    npos = len(depths) # number of positions/sampling locations
+    
+    cond=np.array(cond)
+    cond[((cond>0)==False)]=0
+    
+    conds = np.zeros((npos, nlayer))
+    conds[:,1]= cond 
+    
+    
+    # defines coils configuration, frequency
+    coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
+    
+    # foward modelling
+    k = Problem()
+    k.setModels([depths], [conds])
+    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
+    
+    if plot:
+        k.showResults() # display original model
+    # k.show() # display ECa computed from forward modelling
+    
+    return k.surveys[0].df
+
+
+def EMagPy_forwardmanualdata_shallow(water_depth,h_water,freqs,d_coils=1.929,plot=True,cond=[0,2400]):
+
+    # parameters for the synthetic model
+    nlayer = 3 # number of layers
+    depths =np.array([h_water,water_depth]).transpose()
+    npos = depths.shape[0] # number of positions/sampling locations
+    
+    cond=np.array(cond)
+    cond[((cond>0)==False)]=0
+    
+    conds = np.zeros((npos, nlayer))
+    conds[:,1:]= cond 
+    
+    
+    # defines coils configuration, frequency
+    coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
+    
+    # foward modelling
+    k = Problem()
+    k.setModels([depths], [conds])
+    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
+    
+    if plot:
+        k.showResults() # display original model
+    # k.show() # display ECa computed from forward modelling
+    
+    return k.surveys[0].df
+
+
+
+def EMagPy_forwardmanualdata_old(depths,freqs,d_coils=1.929,plot=True):
+
+    # parameters for the synthetic model
+    nlayer = 1 # number of layers
+    depths =depths[:,None] 
+    npos = len(depths) # number of positions/sampling locations
+    conds = np.ones((npos, nlayer))*[0, 2400] # EC in mS/m
+    # depth of model 
+    depths2=depths[:,0]
+    
+    # defines coils configuration, frequency
+    coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
+    
+    # foward modelling
+    
+    k = Problem()
+    k.setModels([depths], [conds])
+    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
+    
+    if plot:
+        k.showResults() # display original model
+    # k.show() # display ECa computed from forward modelling
+    
+    return k.surveys[0].df
+
+
+
+#%% Code for comparing data along transect
 
 
 def interpolData_d(data,datamean,proplist):
@@ -1835,60 +2020,6 @@ def loadSectionRawData(file,start,stop,SPS=19200,units='seconds'):
                        max_rows=i_stop,skip_header=i_start)
   
 
-
-def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
-
-    # parameters for the synthetic model
-    nlayer = 2 # number of layers
-    depths =h_water[:,None] 
-    npos = len(depths) # number of positions/sampling locations
-    
-    cond=np.array(cond)
-    cond[((cond>0)==False)]=0
-    
-    conds = np.zeros((npos, nlayer))
-    conds[:,1]= cond 
-    
-    
-    # defines coils configuration, frequency
-    coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
-    
-    # foward modelling
-    k = Problem()
-    k.setModels([depths], [conds])
-    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
-    
-    if plot:
-        k.showResults() # display original model
-    # k.show() # display ECa computed from forward modelling
-    
-    return k.surveys[0].df
-
-
-def EMagPy_forwardmanualdata_old(depths,freqs,d_coils=1.929,plot=True):
-
-    # parameters for the synthetic model
-    nlayer = 1 # number of layers
-    depths =depths[:,None] 
-    npos = len(depths) # number of positions/sampling locations
-    conds = np.ones((npos, nlayer))*[0, 2400] # EC in mS/m
-    # depth of model 
-    depths2=depths[:,0]
-    
-    # defines coils configuration, frequency
-    coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
-    
-    # foward modelling
-    
-    k = Problem()
-    k.setModels([depths], [conds])
-    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
-    
-    if plot:
-        k.showResults() # display original model
-    # k.show() # display ECa computed from forward modelling
-    
-    return k.surveys[0].df
 
 
 def get_pointsond(d,data,Dd=1):
