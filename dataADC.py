@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from scipy.optimize import curve_fit,least_squares
+from scipy.stats import linregress
 
 from INSLASERdata import *
 import save_load as sl
@@ -1242,45 +1243,218 @@ def plot_QIandH(datamean,params,title=''):
 
 
 
+def Invert_data(datamean,params,
+               w_cond=2408,d_coils=0,
+               plot=True):
+    
+    freq=params['f']
+    
+    if d_coils==0:
+        try:
+            d_coils=params['d_Rx']
+        except KeyError():
+            print('Using default coil distance =1.92')
+            d_coils=1.92
+
+    df=pd.DataFrame( datamean['Q_corr'].values,
+                    columns=['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq)])
+    df2=pd.DataFrame( datamean['I_corr'].values,
+                     columns=['HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)])
+    df3=pd.DataFrame( datamean[['Q_corr','I_corr']].values,
+                     columns=['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq),
+                              'HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)])
+    
+    
+    method='L-BFGS-B' #'L-BFGS-B'  #'ROPE'
+    
+    
+    k= Problem()
+    k2= Problem()
+    k3= Problem()
+    k.createSurvey(df,unit='ppt')
+    k2.createSurvey(df2,unit='ppt')
+    k3.createSurvey(df3,unit='ppt')
+    k.surveys[0].name='Q'
+    k2.surveys[0].name='I'
+    k3.surveys[0].name='Q+I'
+    
+    
+    k.setInit(depths0=[5], fixedDepths=[False],
+              conds0=[0,w_cond], fixedConds=[True, False]) # set initial values
+    k2.setInit(depths0=[5], fixedDepths=[False],
+              conds0=[0,w_cond], fixedConds=[True, False]) # set initial values
+    k3.setInit(depths0=[5], fixedDepths=[False],
+              conds0=[0,w_cond], fixedConds=[True, False]) # set initial values
+    
+    k.invert(forwardModel='Q', method=method, regularization='l2', alpha=0.00,beta=0,
+             bnds=[(0.1,60),(w_cond-20,w_cond+20)], rep=500, njobs=-1,relativeMisfit=True)# figure
+    k2.invert(forwardModel='I', method=method, regularization='l2', alpha=0.00,beta=0,
+             bnds=[(0.1,60),(w_cond-20,w_cond+20)], rep=500, njobs=-1,relativeMisfit=True)# figure
+    k3.invert(forwardModel='QP', method=method, regularization='l2', alpha=0.00,beta=0,
+             bnds=[(0.1,60),(w_cond-20,w_cond+20)], rep=500, njobs=-1,relativeMisfit=True)# figure
+    
+    
+    
+    datamean['hw_invQ']=k.depths[0]
+    datamean['hw_invI']=k2.depths[0]
+    datamean['hw_invQI']=k3.depths[0]
+    
+    
+    datamean['h_totQ']=datamean['hw_invQ']-datamean.h_Laser
+    datamean['h_totI']=datamean['hw_invI']-datamean.h_Laser
+    datamean['h_totQI']=datamean['hw_invQI']-datamean.h_Laser
+
 
 
 def Fit_climbs(datamean,params,
                t_str,t_stp, h_tot,w_depth=[],shallow=True,
-               w_cond=2408,d_coils=2.027,
+               w_cond=2408,d_coils=0,
                plot=True):
-
-    lims=[]
+    """
     
+
+    Parameters
+    ----------
+    datamean : TYPE
+        DESCRIPTION.
+    params : TYPE
+        DESCRIPTION.
+    t_str : list,array
+        start times for climbs (up or down)
+    t_stp : list,array
+        stop times for climbs (up or down)
+    h_tot : list,array
+        total thickness (ice+snow) at climbs location
+    w_depth : TYPE, optional
+        water ddepth (ice bottom to sea floor) at climbs location. 
+        Needed only if Shallow=True The default is [].
+    shallow : TYPE, optional
+        if True use 3-layers model for shallow water. The default is True.
+    w_cond : TYPE, optional
+        Conductivity of wea water. The default is 2408.
+    d_coils : TYPE, optional
+        distance of coils. The default is 0. If 0 try to read coil distance from params. 
+        If not found uses default 1.92
+    plot : TYPE, optional
+        Plot figures?. The default is True.
+
+    Returns
+    -------
+    None.
+
+    """
+    
+    if len(t_str)!=len(t_stp) or len(t_str)!=len(h_tot) or (shallow and len(t_str)!=len(w_depth)):
+        print('t_str,t_stp, h_tot,w_depth needs to have same length. Stopping fit of climbs !!!')
+        return None
+    
+    
+    freq=params['f']
+    if d_coils==0:
+        try:
+            d_coils=params['d_Rx']
+        except KeyError():
+            d_coils=1.92
+            
+    
+    
+    # get data climbs
+    lims=[]    
     for i,[st,stp] in enumerate(zip(t_str,t_stp)):
         lims_i=[np.searchsorted(datamean.time.values,st),np.searchsorted(datamean.time.values,stp)]
         lims.append(lims_i)
     lims2=np.array([datamean.index[np.array(lims)[:,0]],datamean.index[np.array(lims)[:,1]]]).transpose()
     
-    datamean4=datamean.iloc[lims[0][0]:lims[0][1]].copy()
+    data_climbs=datamean.iloc[lims[0][0]:lims[0][1]].copy()
     for i in range(1,len(t_stp)):
-        datamean4=pd.concat([datamean4,datamean.iloc[lims[i][0]:lims[i][1]].copy()])
+        data_climbs=pd.concat([data_climbs,datamean.iloc[lims[i][0]:lims[i][1]].copy()])
         
-    
-    datamean4['h_tot_ref']=datamean4.h_Laser.values
-    datamean4['w_depth_ref']=0
+    # add data ice from drillholes
+    data_climbs['h_tot_ref']=data_climbs.h_Laser.values
+    data_climbs['w_depth_ref']=0.0
     for i,l in enumerate(lims2):
-        datamean4.loc[lims2[i,0]:lims2[i,1],'h_tot_ref']+=h_tot[i]
-        datamean4.loc[lims2[i,0]:lims2[i,1],'w_depth_ref']=w_depth[i]
-    datamean4['w_depth_ref']+=datamean4['h_tot_ref']
-
-    if shallow:
-        emag1=EMagPy_forwardmanualdata(datamean4.h_Laser.values+np.mean(h_tot[i]),[freq],
+        data_climbs.loc[lims2[i,0]:lims2[i,1],'h_tot_ref']+=h_tot[i]
+        data_climbs.loc[lims2[i,0]:lims2[i,1],'w_depth_ref']=w_depth[i]
+    data_climbs['w_depth_ref']+=data_climbs['h_tot_ref']
+    
+    
+    # model climbs data
+    if not shallow:
+        emag=EMagPy_forwardmanualdata(data_climbs.h_Laser.values+np.mean(h_tot[i]),[freq],
                                        d_coils=d_coils,plot=plot,cond=w_cond)
     else:
-        emag2=EMagPy_forwardmanualdata_shallow(datamean4['w_depth_ref'],datamean4['h_tot_ref'],
+        emag=EMagPy_forwardmanualdata_shallow(data_climbs['w_depth_ref'],data_climbs['h_tot_ref'],
                                                [freq],
                                                d_coils=d_coils,
                                                plot=plot,cond=[w_cond,0])
 
+    data_climbs['Q_modeled']=emag['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq)].values
+    data_climbs['I_modeled']=emag['HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)].values
+    
+    
+    fitQ=linregress(data_climbs.Q_Rx1,data_climbs.Q_modeled)
+    fitI=linregress(data_climbs.I_Rx1,data_climbs.I_modeled)
+    
+    params['fitQ_climbs']=fitQ
+    params['fitI_climbs']=fitI
+    
+    data_climbs['Q_Rx1_corr']=data_climbs.Q_Rx1*fitQ.slope+fitQ.intercept
+    data_climbs['I_Rx1_corr']=data_climbs.I_Rx1*fitI.slope+fitI.intercept
+    
+    datamean['Q_Rx1_corr']=datamean.Q_Rx1*fitQ.slope+fitQ.intercept
+    datamean['I_Rx1_corr']=datamean.I_Rx1*fitI.slope+fitI.intercept
 
+    
+    if plot:
+        
+        data_climbs2=[]
+        for i,l in enumerate(lims2):
+            data_climbs2.append(data_climbs.loc[lims2[i,0]:lims2[i,1]].copy())
+    
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq/2,params['name']))
+        for i,d in enumerate(data_climbs2): 
+            ax.plot(d.h_tot_ref,d.Q_Rx1,'--',label=f'i={i:d}')
+            ax2.plot(d.h_tot_ref,d.I_Rx1,'--') 
+        ax.set_ylabel('amplitude Q (ppt)')
+        ax.set_xlabel('h water (m)')
+        ax2.set_ylabel('amplitude I(ppt)')
+        ax2.set_xlabel('h water (m)')
+        ax.legend()
+        ax2.legend()
+        pl.tight_layout()
+        
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq/2,params['name']))
+        for i,d in enumerate(data_climbs2): 
+            ax.plot(d.Q_Rx1,d.Q_modeled,'x',label=f'i={i:d}')
+            ax2.plot(d.I_Rx1,d.I_modeled,'x',label=f'i={i:d}')
+        xlim=np.array((0,data_climbs.Q_Rx1.max()))
+        ax.plot(xlim,xlim*fitQ.slope+fitQ.intercept,'--k',label='fit')
+        ax.set_ylabel('Q modeled (ppt)')
+        ax.set_xlabel('Q LEM (ppt)')
+        ax.legend()  
+        xlim=np.array((0,data_climbs.I_Rx1.max()))
+        ax2.plot(xlim,xlim*fitI.slope+fitI.intercept,'--k',label='fit')
+        ax2.set_ylabel('I modeled (ppt)')
+        ax2.set_xlabel('I LEM (ppt')
+        ax2.legend()
+        
+        
+        fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq/2,params['name']))
+        ax.plot(data_climbs.time,data_climbs.Q_Rx1_corr,'x',label='LEM')
+        ax.plot(data_climbs.time,data_climbs.Q_modeled,'--k',label='modeled')
+        ax.set_ylabel('amplitude Q (ppt)')
+        ax.set_xlabel('time (s)')
+        ax2.plot(data_climbs.time,data_climbs.I_Rx1_corr,'x',label='LEM')
+        ax2.plot(data_climbs.time,data_climbs.I_modeled,'--k',label='modeled')
+        ax2.set_ylabel('amplitude I  (ppt)')
+        ax2.set_xlabel('time (s)')
 
-
-
+    return data_climbs
 
 def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
 
@@ -1423,8 +1597,8 @@ def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
         # interpolate PINS1 data
         interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'elevation',])
         datamean.rename(columns={'elevation':'h_GPS'}, inplace=True)
-        interpolData(dataINS.Laser,datamean,['h_corr', 'roll', 'pitch','signQ', 'T'])
-        datamean.rename(columns={"T": "TempLaser",'h_corr':'h_Laser'}, inplace=True)
+        interpolData(dataINS.Laser,datamean,['h_modeled', 'roll', 'pitch','signQ', 'T'])
+        datamean.rename(columns={"T": "TempLaser",'h_modeled':'h_Laser'}, inplace=True)
     except AttributeError: 
          print("Can't find right INS data. Continue without them.")
          datamean['TOW']=datamean.index/SPS
@@ -2809,7 +2983,7 @@ def plotsnip_raw(d):
 
 
     
-def plot_corrWindow(snip,f, ch=0,window=200, dWindow=0):    
+def plot_modeledWindow(snip,f, ch=0,window=200, dWindow=0):    
     A,phase,Q,I,time=corrRunWindow(snip,f,SPS,window,dWindow=dWindow)
     
     pl.figure(figsize=(10,8))
@@ -2857,7 +3031,7 @@ def inspect_snippet(data, i,ch=0,window=200,SPS=19200):
     
     f,A,phase,Q,I= maxCorr_optimize(snip[:,ch],df=0.01,n=101,plot=True)
     
-    plot_corrWindow(snip,f, ch=0,window=100, dWindow=50)
+    plot_modeledWindow(snip,f, ch=0,window=100, dWindow=50)
     
     plot_spectrograms(snip[:,ch],SPS,scale='dB')
     
