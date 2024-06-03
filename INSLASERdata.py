@@ -703,7 +703,7 @@ def get_TOW0(data,iStart=2,PIN_start=8,dt=9000):
                 raise ValueError(f'Timestamp {iStart} was not on pin {PIN_start:d} of INS.', iStart)
         else:
             start =data.PSTRB.TOW[iStart]/1000
-            print('PIN used for start: {:d} ,iStrat: {:d}'.format(data.PSTRB.pin[iStart],iStart))
+            print('PIN used for start: {:.0f} ,iStrat: {:.0f}'.format(data.PSTRB.pin[iStart],iStart))
             
     except (AttributeError, IndexError) :
             start =data.PINS1.TOW[0]

@@ -179,8 +179,9 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         saveCSV=True
         savePKL=True
     if saveCSV:
-        save_LEM_csv(datamean,params,columns=columns,MultiFreq=MultiFreq)
+        save_LEM_csv(datamean,params,columns=columns)
     if savePKL:   
+       fileOutputPKL=params['path']+'/LEM'+params['name']+'.pkl'
        sl.save_pkl([datamean, dataINS,params], fileOutputPKL)
     
        
@@ -488,14 +489,16 @@ def write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
     file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
     
     CalParams=params['CalParams']
-    if params['i_cal']!=[]:
-        file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
-        for i,ch in enumerate(Rx_ch):
-            file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,CalParams['A0'][i],
-                                                                          i+1,CalParams['phase0'][i]))
-    else:
+    try:
+        if params['i_cal']!=[]:
+            file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
+            for i,ch in enumerate(Rx_ch):
+                file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,CalParams['A0'][i],                                                                i+1,CalParams['phase0'][i]))
+        else:
+            file.write("# No index calibration")
+    except NameError:
         file.write("# No index calibration")
-    
+        
     if params['autoCal']:
         file.write("# auto calibration: start:{:.4f},  stop:{:.4f} \n".format(CalParams['start'],CalParams['start']))
         for i,ch in enumerate(Rx_ch):
@@ -1204,13 +1207,13 @@ def plot_QIandH(datamean,params,title=''):
         
         
         
-    ax.plot(datamean2.time,datamean2.Q_Rx1,'x')
+    ax.plot(datamean.time,datamean.Q_Rx1,'x')
     ax1=ax.twinx()
     ax1b=ax.twinx()
     ax1b.spines.right.set_position(("axes", 1.2))
     
-    ax1.plot(datamean2.time,datamean2.h_Laser,'--k')
-    ax1b.plot(datamean2.time,datamean2.h_GPS-datamean2.h_Laser,'--b')
+    ax1.plot(datamean.time,datamean.h_Laser,'--k')
+    ax1b.plot(datamean.time,datamean.h_GPS-datamean.h_Laser,'--b')
     ax.set_ylabel('amplitude Q (ppt)')
     pl.xlabel('time (s)')
     ax1.set_ylabel('h Laser (m)')
@@ -1225,9 +1228,9 @@ def plot_QIandH(datamean,params,title=''):
     ax3b=ax2.twinx()
     ax3b.spines.right.set_position(("axes", 1.2))
     
-    ax2.plot(datamean2.time,datamean2.I_Rx1,'x')
-    ax3.plot(datamean2.time,datamean2.h_Laser,'--k')
-    ax3b.plot(datamean2.time,datamean2.h_GPS-datamean2.h_Laser,'--b')
+    ax2.plot(datamean.time,datamean.I_Rx1,'x')
+    ax3.plot(datamean.time,datamean.h_Laser,'--k')
+    ax3b.plot(datamean.time,datamean.h_GPS-datamean.h_Laser,'--b')
     ax2.set_ylabel('amplitude I(ppt)')
     ax3.set_xlabel('time (s)')
     ax3.set_ylabel('h Laser (m)')
@@ -1256,11 +1259,11 @@ def Invert_data(datamean,params,
             print('Using default coil distance =1.92')
             d_coils=1.92
 
-    df=pd.DataFrame( datamean['Q_corr'].values,
+    df=pd.DataFrame( datamean['Q_Rx1_corr'].values,
                     columns=['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq)])
-    df2=pd.DataFrame( datamean['I_corr'].values,
+    df2=pd.DataFrame( datamean['I_Rx1_corr'].values,
                      columns=['HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)])
-    df3=pd.DataFrame( datamean[['Q_corr','I_corr']].values,
+    df3=pd.DataFrame( datamean[['Q_Rx1_corr','I_Rx1_corr']].values,
                      columns=['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq),
                               'HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)])
     
@@ -1597,9 +1600,10 @@ def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
         # interpolate PINS1 data
         interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'elevation',])
         datamean.rename(columns={'elevation':'h_GPS'}, inplace=True)
-        interpolData(dataINS.Laser,datamean,['h_modeled', 'roll', 'pitch','signQ', 'T'])
-        datamean.rename(columns={"T": "TempLaser",'h_modeled':'h_Laser'}, inplace=True)
-    except AttributeError: 
+        interpolData(dataINS.Laser,datamean,['h_corr', 'roll', 'pitch','signQ', 'T'])
+        datamean.rename(columns={"T": "TempLaser",'h_corr':'h_Laser'}, inplace=True)
+    except AttributeError as error: 
+         print(error)
          print("Can't find right INS data. Continue without them.")
          datamean['TOW']=datamean.index/SPS
          TOW0=0
