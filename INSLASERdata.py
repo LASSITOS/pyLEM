@@ -1191,7 +1191,7 @@ def GPXToPandas(gpx_path):
     return df
 
 
-def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0):
+def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0,dT=0):
         """
         Find values of t1 in t2 and return the corresponding values x. For missing data different strategies can be chosen.
 
@@ -1208,6 +1208,7 @@ def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0):
                         nearest_2:        Fill up all values of x in x2 in the position t2 corresponding to t1. (loop trough t1). If time lag is > maxDelta return NAN. Nearest value is returned.
 
         maxDelta:   maximum time difference in [s] of interpolation or nearest
+        dT:         Time shift to align timeseries
 
 
         **kwargs:   argments to be passed to np.genfromtxt
@@ -1229,6 +1230,13 @@ def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0):
 
         x2=np.zeros([len(t2),1])
         # x2=np.zeros([len(t2),1],dtype=x.dtype)
+
+
+        # add DeltaT
+        try: #try to use datetime format
+            t1=t1+pd.Timedelta( seconds=dT)
+        except:
+            t1+=dT
 
         if method=='exact':
                 # return    np.where(t1[t1.searchsorted(t2)]==t2,x,np.nan)

@@ -13,7 +13,7 @@ import matplotlib.pyplot as pl
 from matplotlib.gridspec import GridSpec
 import pandas as pd
 import glob
-from cmcrameri import cm as cmCrameri
+
 from scipy import signal
 from scipy import optimize
 import time
@@ -21,6 +21,11 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from scipy.optimize import curve_fit,least_squares
 from scipy.stats import linregress
+
+# non anaconda libraries
+from hampel import hampel   # pip install hampel
+from cmcrameri import cm as cmCrameri
+
 
 from INSLASERdata import *
 import save_load as sl
@@ -36,11 +41,8 @@ from emagpy_seaice import invertHelper
 SPS= 19200
 ZoneInfo("UTC")
 
-#%%  functions for loading and handling data + Postprocessing
+#%%  function for Postprocessing raw data
 
-def loadDataLEM(path,name):
-    file=path+'/LEM'+name+'.csv'
-    return pd.read_csv(file,header=15)
 
 def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                    plot=False, plotINS=False,
@@ -189,9 +191,42 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
 
 
 
+#%%  Supporting functions for loading and handling data + Postprocessing
+
+
+def saveDataLEM(datamean, dataINS,params,saveCSV=True,savePKL=True):
+    """
+    
+
+    Parameters
+    ----------
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    dataINS : TYPE
+        DESCRIPTION.
+    params : dictonary
+        Parameters for processed LEM data.
+    saveCSV : TYPE, optional
+        DESCRIPTION. The default is True.
+    savePKL : TYPE, optional
+        DESCRIPTION. The default is True.
+
+    Returns
+    -------
+    None.
+
+    """
+    if saveCSV:
+        save_LEM_csv(datamean,params)
+    if savePKL:   
+       fileOutputPKL=params['path']+'/LEM'+params['name']+'.pkl'
+       sl.save_pkl([datamean, dataINS,params], fileOutputPKL)
 
 
 
+def loadDataLEM(path,name):
+    file=path+'/LEM'+name+'.csv'
+    return pd.read_csv(file,header=15)
 
 
 
@@ -514,8 +549,89 @@ def write_file_header(fileOutput,params,i_missing,gap,Tx_ch,Rx_ch):
 
 def trim_data(t0,t1,datamean,params):
     lims_i=[np.searchsorted(datamean.time.values,t0),np.searchsorted(datamean.time.values,t1)]
+    params['trim_times']=[t0,t1]
     return datamean.iloc[lims_i[0]:lims_i[1]].copy()
     
+
+
+
+def filter_outliers(datamean,params,window_size=10,deviation=3.0,plot=False):
+    """
+    Filter outliers over a running window and substitute them with median. Use Hampel function. 
+    Datapoints are considered outliers if the deviation excheed the Median Absolute Deviation (MAD)
+    multiplied by deviation parameter. 
+
+    Parameters
+    ----------
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    params : dictonary
+        Parameters for processed LEM data.
+    window_size : TYPE, optional
+        Number of datapoints in running window. The default is 10.
+    deviation : TYPE, optional
+        Define the deviation form the MAD for considering datapoints as outliers . The default is 3.0.
+    plot : TYPE, optional
+        Plot filtered data. The default is False.
+
+    Returns
+    -------
+    filtQ : TYPE
+        DESCRIPTION.
+    filtI : TYPE
+        DESCRIPTION.
+
+    """
+
+    try: 
+        datamean.Q_Rx1=datamean['Q_Rx1_original'].copy()
+        datamean.I_Rx1=datamean['I_Rx1_original'].copy()
+    except KeyError:
+        datamean['Q_Rx1_original']=datamean.Q_Rx1.values
+        datamean['I_Rx1_original']=datamean.I_Rx1.values
+        
+    filtQ = hampel(datamean.Q_Rx1_original, window_size,deviation)
+    filtI = hampel(datamean.I_Rx1_original, window_size,deviation)
+    
+    datamean.Q_Rx1=filtQ.filtered_data.values
+    datamean.I_Rx1=filtI.filtered_data.values
+    
+    ind=filtQ.thresholds>50*filtQ.medians
+    filtQ.thresholds[ind]=50*filtQ.medians[ind]
+    ind=filtI.thresholds>50*filtI.medians
+    filtI.thresholds[ind]=50*filtI.medians[ind]
+    
+    if plot:
+        fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+        ax.plot(datamean.time,datamean['Q_Rx1_original'].values,':',label='Q Rx')
+        ax.fill_between(datamean.time, filtQ.medians + filtQ.thresholds,
+                             filtQ.medians - filtQ.thresholds, color='gray', 
+                             alpha=0.5, label='Median +- Threshold')
+        ax.plot(datamean.time,filtQ.filtered_data,'x',label='filtered')
+        ax.scatter(datamean.time.values[filtQ.outlier_indices],
+                   datamean[f'Q_Rx1_original'].values[filtQ.outlier_indices],
+                   marker='o',edgecolor='g',facecolor='None',label='outliers')
+        ax.set_title('window={:d}, deviation={:.1f} '.format(window_size,deviation))
+        ax.set_ylabel('Q (-)')
+        ax.set_xlabel('time (s)')
+        ax2.legend()
+        
+        
+        ax2.plot(datamean.time,datamean['I_Rx1_original'].values,':',label='I Rx')
+        ax2.fill_between(datamean.time, filtI.medians + filtI.thresholds,
+                             filtI.medians - filtI.thresholds, color='gray', 
+                             alpha=0.5, label='Median +- Threshold')
+        
+        ax2.plot(datamean.time,filtI.filtered_data,'x',label='filtered')
+        ax2.scatter(datamean.time.values[filtI.outlier_indices],
+                    datamean[f'I_Rx1_original'].values[filtI.outlier_indices],
+                   marker='o',edgecolor='g',facecolor='None',label='outliers')
+        ax2.set_ylabel('I (-)')
+        ax2.set_xlabel('time (s)')
+        ax2.legend()
+            
+    return filtQ,filtI
+
 
 # %% load raw data and Lock-In filter
 
@@ -1249,6 +1365,27 @@ def plot_QIandH(datamean,params,title=''):
 def Invert_data(datamean,params,
                w_cond=2408,d_coils=0,
                plot=True):
+    """
+    
+
+    Parameters
+    ----------
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    params : dictonary
+        Parameters for processed LEM data.
+    w_cond : TYPE, optional
+        DESCRIPTION. The default is 2408.
+    d_coils : TYPE, optional
+        DESCRIPTION. The default is 0.
+    plot : TYPE, optional
+        DESCRIPTION. The default is True.
+
+    Returns
+    -------
+    None.
+
+    """
     
     freq=params['f']
     
@@ -1318,10 +1455,10 @@ def Fit_climbs(datamean,params,
 
     Parameters
     ----------
-    datamean : TYPE
-        DESCRIPTION.
-    params : TYPE
-        DESCRIPTION.
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    params : dictonary
+        Parameters for processed LEM data.
     t_str : list,array
         start times for climbs (up or down)
     t_stp : list,array
@@ -1592,7 +1729,13 @@ def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
         TOW=datamean.index/SPS+TOW0+dT_start
         print('TOW0 ADC: {:f}, dT_start: {:f}'.format(TOW0,dT_start))
         
-        t = gps_datetime_np(dataINS.PINS1.GPSWeek[0],TOW)
+        
+        try:
+            dataINS.PGPSP.leapS[0]
+        except:
+            leapS=18
+        
+        t = gps_datetime_np(dataINS.PINS1.GPSWeek[0],TOW,leap_seconds=leapS)
         datamean['t']=t
         datamean['TOW']=TOW
         datamean['time']=datamean.TOW-TOW0
