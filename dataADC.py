@@ -614,8 +614,8 @@ def filter_outliers(datamean,params,window_size=10,deviation=3.0,plot=False):
         ax.set_title('window={:d}, deviation={:.1f} '.format(window_size,deviation))
         ax.set_ylabel('Q (-)')
         ax.set_xlabel('time (s)')
-        ax2.legend()
-        
+        ax.legend()
+        ax.set_ylim([np.min(filtQ.filtered_data.values),np.max(filtQ.filtered_data.values)])
         
         ax2.plot(datamean.time,datamean['I_Rx1_original'].values,':',label='I Rx')
         ax2.fill_between(datamean.time, filtI.medians + filtI.thresholds,
@@ -629,6 +629,8 @@ def filter_outliers(datamean,params,window_size=10,deviation=3.0,plot=False):
         ax2.set_ylabel('I (-)')
         ax2.set_xlabel('time (s)')
         ax2.legend()
+        ax2.set_ylim([np.min(filtI.filtered_data.values),np.max(filtI.filtered_data.values)])
+
             
     return filtQ,filtI
 
@@ -1731,7 +1733,7 @@ def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
         
         
         try:
-            dataINS.PGPSP.leapS[0]
+            leapS=dataINS.PGPSP.leapS[0]
         except:
             leapS=18
         
@@ -1771,12 +1773,157 @@ gps_datetime_np=np.vectorize(gps_datetime, doc='Vectorized `gps_datetime`')
 
 
 
+#%%  import UAV_GPX data and add to datamean
+
+
+def load_GPS_UAV(uav_path,datamean,dT=0,lim_syncGPSLaser=[]):
+    """
+    
+
+    Parameters
+    ----------
+    uav_path : TYPE
+        path data csv.
+    datamean : TYPE
+        DESCRIPTION.
+    dT : TYPE, optional
+        time correction. The default is 0.
+    lim_syncGPSLaser : TYPE, List
+        Limits of time to use for align h_Laser and h_UAV. The default is [].
+
+    Returns
+    -------
+    UAV : TYPE
+        DESCRIPTION.
+
+    """
+    
+    UAV= pd.read_csv(uav_path)
+    
+    # UAV=UAV[UAV.time > '2024-04-17 21:52:45']
+    # UAV=UAV[UAV.time < '2024-04-17 22:10:45']
+    UAV['time']=[datamean.t.iloc[0]+timedelta(milliseconds=UAV['timestamp(ms)'][i]) for i in range(len(UAV))]
+
+    # merge data
+    datamean['elevation_UAV']=mergeByTime(UAV.time,UAV['GPS_RAW_INT.alt']/1000,datamean.t, method='linInterpol', maxDelta=0.5,dT=dT)
+    datamean['lat_UAV']=mergeByTime(UAV.time,UAV['GPS_RAW_INT.lat'],datamean.t, method='linInterpol', maxDelta=0.5,dT=dT)
+    datamean['lon_UAV']=mergeByTime(UAV.time,UAV['GPS_RAW_INT.lon'],datamean.t, method='linInterpol', maxDelta=0.5,dT=dT)
+
+    if len(lim_syncGPSLaser):
+        # alline Laser and GPS
+        ind=(datamean.time >lim_syncGPSLaser[0]) &( datamean.time <lim_syncGPSLaser[1])
+        datamean['h_UAV']=datamean['elevation_UAV']-datamean['elevation_UAV'][ind].mean()+datamean['h_Laser'][ind].mean()
+    else:
+        ind=19200
+        datamean['h_UAV']=datamean['elevation_UAV']-datamean['elevation_UAV'][:ind].mean()+datamean['h_Laser'][:ind].mean()
+    
+    return UAV
 
 
 
+def load_GPX(gpx_path,datamean,dT=0,lim_syncGPSLaser=[]):
+    """
+    
+
+    Parameters
+    ----------
+    gpx_path : TYPE
+        path gpx data.
+    datamean : TYPE
+        DESCRIPTION.
+    dT : TYPE, optional
+        time correction. The default is 0.
+    lim_syncGPSLaser : TYPE, List
+        Limits of time to use for align h_Laser and h_UAV. The default is [].
+
+    Returns
+    -------
+    UAV : TYPE
+        DESCRIPTION.
+
+    """
+    
+    UAV= GPXToPandas(gpx_path)
+    
+    # UAV=UAV[UAV.time > '2024-04-17 21:52:45']
+    # UAV=UAV[UAV.time < '2024-04-17 22:10:45']
+    
+
+    # merge data
+    datamean['elevation_UAV']=mergeByTime(UAV.time,UAV['elevation'],datamean.t, method='linInterpol', maxDelta=0.5,dT=dT)
+    datamean['lat_UAV']=mergeByTime(UAV.time,UAV['lat'],datamean.t, method='linInterpol', maxDelta=0.5,dT=dT)
+    datamean['lon_UAV']=mergeByTime(UAV.time,UAV['lon'],datamean.t, method='linInterpol', maxDelta=0.5,dT=dT)
+
+    if len(lim_syncGPSLaser):
+        # alline Laser and GPS
+        ind=(datamean.time >lim_syncGPSLaser[0]) &( datamean.time <lim_syncGPSLaser[1])
+        datamean['h_UAV']=datamean['elevation_UAV']-datamean['elevation_UAV'][ind].mean()+datamean['h_Laser'][ind].mean()
+    else:
+        ind=19200
+        datamean['h_UAV']=datamean['elevation_UAV']-datamean['elevation_UAV'][:ind].mean()+datamean['h_Laser'][:ind].mean()
+    
+    return UAV
 
 
+def fit_Laser_UAV_GPS(datamean,params,t_str=[],t_stp=[],slope=0):
+    
+    if len(t_str)==len(t_stp) and len(t_stp)>0:
+        # get data climbs
+        lims=[]    
+        for i,[st,stp] in enumerate(zip(t_str,t_stp)):
+            lims_i=[np.searchsorted(datamean.time.values,st),np.searchsorted(datamean.time.values,stp)]
+            lims.append(lims_i)
+        lims2=np.array([datamean.index[np.array(lims)[:,0]],datamean.index[np.array(lims)[:,1]]]).transpose()
+        
+        data_climbs=datamean.iloc[lims[0][0]:lims[0][1]].copy()
+        for i in range(1,len(t_stp)):
+            data=pd.concat([data_climbs,datamean.iloc[lims[i][0]:lims[i][1]].copy()])
+    else:
+        data=datamean
+    
+    
+    if slope==0:
+        fit=linregress(data['h_UAV'].values[np.isnan(data['h_UAV'].values)==False],
+                       data['h_Laser'].values[np.isnan(data['h_UAV'].values)==False])
+    
+        pl.figure()
+        pl.plot(data['h_UAV'],data['h_Laser'],'x')
+        pl.plot([0,40],[0,40],'--k')
+        pl.plot([0,40],np.array([0,40])*fit.slope+fit.intercept,'--g')
+        pl.text(25,15,'y=x*{:.4f}+{:.4f}'.format(fit.slope,fit.intercept),color='g')
+        pl.text(20,30,'1:1',color='k')
+        pl.xlabel('h GPS (m)')
+        pl.ylabel('h laser (m)')
+     
+        params['fit_GPS_UAV']=fit
+        slope=fit.slope
+    else:
+        params['fit_GPS_UAV']=fit
+    
+   
 
+    
+    datamean['h_UAV_orig']=datamean['h_UAV'].values
+    datamean['h_UAV']=(datamean['h_UAV'])*slope
+    
+
+    fig,ax=pl.subplots(1,1,sharex=True)
+    ax.plot(datamean.time,datamean['h_UAV_orig'],label='GPS UAV original')
+    ax.plot(datamean.time,datamean['h_UAV'],label='GPS UAV corrected')
+    ax.plot(datamean.time,datamean['h_Laser'],label='Laser')
+    ax.set_xlabel('time (s)')
+    ax.set_ylabel('h (m)')
+    ax.legend()
+
+def plot_UAV_GPS(datamean):
+    fig,ax=pl.subplots(1,1,sharex=True)
+    ax.plot(datamean.time,datamean['elevation_UAV'],label='GPS elevation UAV')
+    ax.plot(datamean.time,datamean['h_UAV'],label='h GPS UAV')
+    ax.plot(datamean.time,datamean['h_GPS'],label='h GPS 2')
+    ax.plot(datamean.time,datamean['h_Laser'],label='Laser')
+    ax.set_xlabel('time (s)')
+    ax.set_ylabel('h (m)')
+    ax.legend()
 
 #%% Code for signal to noise 
 

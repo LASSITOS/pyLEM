@@ -1186,7 +1186,7 @@ def GPXToPandas(gpx_path):
     # interpolate times if overlapping
     for i in df.index[1:-1]:
         if df.time[i]-df.time[i-1]==timedelta(seconds=0):
-            df.time.loc[i]=df.time[i]+(df.time[i+1]-df.time[i])/2
+            df.loc[i,'time']=df.time[i]+(df.time[i+1]-df.time[i])/2
     
     return df
 
