@@ -67,6 +67,16 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
     header=loadDataHeader(fileLASER)
     params.update( header)
     
+    if 'distCenter' in INSkargs.keys():
+        params['distCenter']=INSkargs['distCenter']
+    
+    else: 
+        if 'distCenter' in params.keys():
+            INSkargs['distCenter']=params['distCenter']
+        else:
+            params['distCenter']=0
+        
+    
     print('Load INS+Laser: ',file)
     try:
         dataINS=INSLASERdata(fileLASER,name='\\INS'+name+'.csv',**INSkargs)
@@ -87,7 +97,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                                                                flowpass=flowpass,window=window,
                                                                i_Tx=int(Tx_ch[2:]),Rx_ch=Rx_ch,
                                                                freqs=[1079.0228, 3900.1925, 8207.628],
-                                                               **kwargs)    
+                                                                **kwargs)    # ToDo: read parameters from params
         
         params['start_ind']=start_ind
         params['freqs']=freqs
@@ -282,11 +292,16 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
     
     # derive calibration parameters from automatic calibration using calibration coil
     if autoCal and dataINS.Cal.len>0:
-        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration(dataINS,datamean,params['f'],plot=plot)
+        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration(dataINS,
+                                                                              datamean,
+                                                                              params,
+                                                                              params['f'],
+                                                                              Rx_ch=Rx_ch,
+                                                                              plot=plot)
 
     
         # Define transformation function
-        def trans(I,Q, g, phi):
+        def Coordinate_trans(I,Q, g, phi):
             X = Q*1j+I
             Z=g*X*np.exp(phi*1j)
             return np.real(Z), np.imag(Z)
@@ -298,7 +313,7 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
             j=i+1
             
 
-            I,Q=trans(datamean[f'I_Rx{j:d}']-calI0[i_autoCal][i],
+            I,Q=Coordinate_trans(datamean[f'I_Rx{j:d}']-calI0[i_autoCal][i],
                       datamean[f'Q_Rx{j:d}']-calQ0[i_autoCal][i], 
                       gs[i_autoCal][i], 
                       phis[i_autoCal][i])
@@ -353,11 +368,13 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
     
     # derive calibration parameters from automatic calibration using calibration coil
     if autoCal and dataINS.Cal.len>0:
-        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration_multiFreq(dataINS,datamean,params['freqs'],Rx_ch=Rx_ch,plot=plot)
+        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration_multiFreq(dataINS,datamean,
+                                                                                        params,
+                                                                                        plot=plot)
 
     
-        # Define transformation function
-        def trans(I,Q, g, phi):
+        # Define coordinates transformation function, adjust phase and transform to ppm
+        def Coordinate_trans(I,Q, g, phi):
             X = Q*1j+I
             Z=g*X*np.exp(phi*1j)
             return np.real(Z), np.imag(Z)
@@ -374,7 +391,7 @@ def Calibrate_multiFreq(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoC
                 # print('k:',k)
                 # print('calI0:',calI0)
 
-                I,Q=trans(datamean[f'I_Rx{j:d}_f{k:d}']-calI0[i_autoCal][i][k-1],
+                I,Q=Coordinate_trans(datamean[f'I_Rx{j:d}_f{k:d}']-calI0[i_autoCal][i][k-1],
                           datamean[f'Q_Rx{j:d}_f{k:d}']-calQ0[i_autoCal][i][k-1], 
                           gs[i_autoCal][i][k-1], 
                           phis[i_autoCal][i][k-1])
@@ -1220,14 +1237,25 @@ def loadADCraw_multiFreq(file,SPS=19200,
         try: 
             i_rest=chunk2.index[b]
         except Exception as e:
-            # print('Processing chunk number: {:d}'.format(i_chunk))
-            print('b: {:d}'.format(b))
-            print('len(chunk2): {:d}, start:{:d}, stop:{:d} '.format(len(chunk2),chunk2.index[0],chunk2.index[-1]))
-            print(i_st)
-            print(i_sp)
-            i_rest=chunk2.index[-1]
-            print('i_rest: {:d} '.format(i_rest))
-            print(e)
+            try:
+                print('Processing chunk number: {:d}'.format(i_chunk))
+                print('b: {:d}'.format(b))
+                print('len(chunk2): {:d}, start:{:d}, stop:{:d} '.format(len(chunk2),chunk2.index[0],chunk2.index[-1]))
+                print(i_st)
+                print(i_sp)
+                i_rest=chunk2.index[-1]
+                print('i_rest: {:d} '.format(i_rest))
+                print(e)
+            except Exception as e:
+                print('Processing chunk number: {:d}'.format(i_chunk))
+                print('b: {}'.format(b))
+                print('len(chunk2): {:d}, start:{:d}, stop:{:d} '.format(len(chunk2),chunk2.index[0],chunk2.index[-1]))
+                print(i_st)
+                print(i_sp)
+                i_rest=chunk2.index[-1]
+                print('i_rest: {:d} '.format(i_rest))
+                print(e)
+            
         chunkrest=chunk2.loc[i_rest:]+int(dT_quite*SPS)
         start_ind=np.append(start_ind, chunk2.index[i_st])
         
@@ -1366,7 +1394,8 @@ def plot_QIandH(datamean,params,title=''):
 
 def Invert_data(datamean,params,
                w_cond=2408,d_coils=0,
-               plot=True):
+               plot=True,method='L-BFGS-B'):
+
     """
     
 
@@ -1382,6 +1411,8 @@ def Invert_data(datamean,params,
         DESCRIPTION. The default is 0.
     plot : TYPE, optional
         DESCRIPTION. The default is True.
+    method : TYPE, optional
+        DESCRIPTION. The default is 'L-BFGS-B'.
 
     Returns
     -------
@@ -1407,7 +1438,7 @@ def Invert_data(datamean,params,
                               'HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)])
     
     
-    method='L-BFGS-B' #'L-BFGS-B'  #'ROPE'
+     #'L-BFGS-B'  #'ROPE'
     
     
     k= Problem()
@@ -2132,7 +2163,7 @@ def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1'],n_freqs=
     return start,stop,off1,on1,ID1, Qs,Is
 
 
-def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.36,11.18,11.44])*1e-3,Ac= 0.04**2*np.pi,Nc= 320,dR= 1.92 ,dB= 0.56 ,dC=1.92-0.225):    
+def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.36,11.18,11.44])*1e-3,Ac= 0.04**2*np.pi,Nc= 320.0,dR= 1.92 ,dB= 0.56 ,dC=1.92-0.225):    
     """   
     Calculate the theoretical magnitude of the normalized secondary effect generated by calibration coil. See notes for formulas and derivation.
     
@@ -2186,7 +2217,7 @@ def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.
     Z=ZI+1j*ZQ
     return Z,ZI,ZQ,magZ
     
-def  fitCalibrationParams(calQ,calI,f,plot=False):
+def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
     """
     Fit calibration parameters to measured secondary signal produced by calibration coil.  Gain g, and phase phi.
 
@@ -2197,9 +2228,12 @@ def  fitCalibrationParams(calQ,calI,f,plot=False):
     calI : TYPE
         DESCRIPTION.
     f : TYPE
-        DESCRIPTION.
+        frequency.
     plot : TYPE, optional
         DESCRIPTION. The default is False.
+    CalParams : dictionary, optional
+        Parameters used to calculate theoretical calibration coild signal. 
+        The default is empty. Then use values of LEMV1. Only for backward compatibility.
 
     Returns
     -------
@@ -2211,15 +2245,19 @@ def  fitCalibrationParams(calQ,calI,f,plot=False):
     # get differences from 
     
     calZ=np.sqrt(calI**2+calQ**2)
-    print(calZ)
+    # print(calZ)
     
-    if len(calZ)==4:    
-        Z,ZI,ZQ,magZ=refCalibration(f)
-    else:
-        Z,ZI,ZQ,magZ=refCalibration(f,Rs=np.array([77.5,143.5,400, 619,277,125]),
-                                    Ls=np.ones(6)*11.365*1e-3,
-                                    Ac= 0.04**2*np.pi,Nc= 320,dR= 1.92 ,dB= 0.56 ,dC=1.92-0.225)    
-           
+    if len(CalParams)>0:
+        Z,ZI,ZQ,magZ=refCalibration(f,**CalParams)
+        print('Using data from Logfile for calibration')
+    else:  # use old values for backward compatibility 
+        if len(calZ)==4:    
+            Z,ZI,ZQ,magZ=refCalibration(f)
+        else:
+            Z,ZI,ZQ,magZ=refCalibration(f,Rs=np.array([77.5,143.5,400, 619,277,125]),
+                                        Ls=np.ones(6)*11.365*1e-3,
+                                        Ac= 0.04**2*np.pi,Nc= 320,dR= 1.92 ,dB= 0.56 ,dC=1.92-0.225)    
+               
 
 
     # Sample data
@@ -2296,7 +2334,51 @@ def  fitCalibrationParams(calQ,calI,f,plot=False):
         
     return g,phi,[res,params2,res3]
 
-def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
+
+def CheckCalibration(dataINS,datamean,params,f,Rx_ch=['ch1'],plot=True):
+    """
+    Check calibration. looks for calibration messages and fit data to theoretical 
+    calibrations signal. Returns calibration parameters.
+
+    Parameters
+    ----------
+    dataINS : TYPE
+        DESCRIPTION.
+    datamean : TYPE
+        DESCRIPTION.
+    params : TYPE
+        DESCRIPTION.
+    f : TYPE
+        frequency.
+    Rx_ch : TYPE, optional
+        DESCRIPTION. The default is ['ch1'].
+    plot : TYPE, optional
+        DESCRIPTION. The default is True.
+
+    Returns
+    -------
+    gs : TYPE
+        DESCRIPTION.
+    phis : TYPE
+        DESCRIPTION.
+    calQs2 : TYPE
+        DESCRIPTION.
+    calIs2 : TYPE
+        DESCRIPTION.
+    calQ0 : TYPE
+        DESCRIPTION.
+    calI0 : TYPE
+        DESCRIPTION.
+    start : TYPE
+        DESCRIPTION.
+    stop : TYPE
+        DESCRIPTION.
+    on : TYPE
+        DESCRIPTION.
+    off : TYPE
+        DESCRIPTION.
+
+    """
     
     start,stop,off,on,ID, calQs,calIs =getCalTimes(dataINS,datamean,Rx_ch=Rx_ch)
     
@@ -2336,7 +2418,18 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
                 ax2.legend(loc=1)
                 pl.title(f'Cal{k+1:d}, {ch:s}' )
     
-            
+    # get calibration parameters from params        
+    CalParams={'Rs': params['Rs'],
+               'Ls': np.ones_like(params['Rs'])*params['L_CalCoil'],
+               'Ac': params['A_CalCoil'],
+               'Nc': params['N_CalCoil'],
+               'dR': params['d_Rx'],
+               'dB': params['d_Bx'],
+               'dC': params['d_Cx'],
+               }
+
+                               
+    
     
     calQs2=[]
     calIs2=[]
@@ -2350,13 +2443,14 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
          calIs2.append([])
          calQ0.append([])
          calI0.append([])
-         print(gs)
+         # print(gs)
          gs.append([])
          phis.append([])
          for i,ch in enumerate(Rx_ch):     
             calQ=(calQs[k,i,1:].transpose()-calQs[k,i,0])
             calI=(calIs[k,i,1:].transpose()-calIs[k,i,0])
-            g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=plot)
+            
+            g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=plot, CalParams= CalParams)
             
             calQs2[k].append(calQ)
             calIs2[k].append(calI)
@@ -2369,7 +2463,49 @@ def CheckCalibration(dataINS,datamean,f,Rx_ch=['ch1'],plot=True):
     return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off
     
 
-def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
+def CheckCalibration_multiFreq(dataINS,datamean,params,plot=True):
+    """
+    
+
+    Parameters
+    ----------
+    dataINS : TYPE
+        DESCRIPTION.
+    datamean : TYPE
+        DESCRIPTION.
+    params : TYPE
+        DESCRIPTION.
+    plot : TYPE, optional
+        Create control plots. The default is True.
+
+    Returns
+    -------
+    gs : TYPE
+        gain factors.
+    phis : TYPE
+        Phase shifts.
+    calQs2 : TYPE
+        DESCRIPTION.
+    calIs2 : TYPE
+        DESCRIPTION.
+    calQ0 : TYPE
+        Offset Q.
+    calI0 : TYPE
+        Offsets I.
+    start : TYPE
+        DESCRIPTION.
+    stop : TYPE
+        DESCRIPTION.
+    on : TYPE
+        DESCRIPTION.
+    off : TYPE
+        DESCRIPTION.
+
+    """
+    
+    Rx_ch=params['Rx_ch']
+    freqs=params['freqs']
+    
     n_freqs=len(freqs)
     start,stop,off,on,ID, calQs,calIs =getCalTimes_multi(dataINS,datamean,Rx_ch=Rx_ch,n_freqs=n_freqs)
     
@@ -2413,7 +2549,16 @@ def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
                     ax2.legend(loc=1)
                     pl.title(f'Cal{k+1:d}, {ch:s}, f{r:d}' )
     
-            
+    # get calibration parameters from params        
+    CalParams={'Rs': params['Rs'],
+               'Ls': np.ones_like(params['Rs'])*params['L_CalCoil'],
+               'Ac': params['A_CalCoil'],
+               'Nc': params['N_CalCoil'],
+               'dR': params['d_Rx'],
+               'dB': params['d_Bx'],
+               'dC': params['d_Cx'],
+               }
+        
     
     calQs2=[]
     calIs2=[]
@@ -2427,7 +2572,7 @@ def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
          calIs2.append([[]])
          calQ0.append([[]])
          calI0.append([[]])
-         print(gs)
+         # print(gs)
          gs.append([[]])
          phis.append([[]])
          for i,ch in enumerate(Rx_ch):   
@@ -2435,7 +2580,9 @@ def CheckCalibration_multiFreq(dataINS,datamean,freqs,Rx_ch=['ch1'],plot=True):
              for r,f in enumerate(freqs):
                 calQ=-(calQs[k,i,r,1:].transpose()-calQs[k,i,r,0])
                 calI=-(calIs[k,i,r,1:].transpose()-calIs[k,i,r,0])
-                g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=True)
+                g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,
+                                                              plot=True, 
+                                                              CalParams= CalParams)
                 
                 calQs2[k][i].append(calQ)
                 calIs2[k][i].append(calI)
