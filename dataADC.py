@@ -49,7 +49,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                    savefile=True,saveCSV=None,savePKL=None,
                      window=1920,freq=0,phase0=0,SPS=19200,flowpass=30,
                      autoCal=True,i_autoCal=0,i_cal=[],
-                     INSkargs={},MultiFreq=False,n_freqs=3,iStart=2,dT_start=0,
+                     INSkargs={},MultiFreq=False,n_freqs=3,iStart=2,dT_start=0,T_max=0,
                      **kwargs):
     
     
@@ -138,6 +138,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                                                                f=freq,phase0=phase0,SPS=SPS,
                                                                flowpass=flowpass,window=window,keep_HF_data=False,
                                                                i_Tx=int(Tx_ch[2:]),plot=plot,
+                                                               T_max=T_max,
                                                                **kwargs)    
 
         # params={}
@@ -811,7 +812,7 @@ def filter_outliers(datamean,params,window_size=10,deviation=3.0,plot=False):
 
 def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
                           flowpass=50,chunksize=19200,keep_HF_data=False,
-                          findFreq=True,i_Tx=3,i_blok=[],plot=True,
+                          findFreq=True,i_Tx=3,i_blok=[],plot=True,T_max=0,
                           **kwargs):
     """
     Read raw data file in blocks and extract signal over LockIn with lowpass filter. Single frequency. 
@@ -838,6 +839,8 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
         DESCRIPTION. The default is 3.
     i_blok : TYPE, optional
         DESCRIPTION. The default is [].
+    T_max : TYPE, optional
+        Data after T_mas (s) are not loaded. The default is []
     **kwargs : TYPE
         DESCRIPTION.
 
@@ -927,7 +930,8 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
 
         else:
             raise ValueError('i_block must be a list with two limits. Frequency can not be determined!')
-        
+        # ia=SPS*5
+        # ib=SPS*8
         f,A,phase0,Q,I= maxCorr(data[ia:ib,i_Tx],df=df,n=n_fmaxsearch,plot=plot,f0=f0)
         
         if plot:
@@ -995,13 +999,14 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
 
         
         #Get mean values
-        datamean=pd.concat([datamean,chunk2.rolling(window,center=True,min_periods=1,step=window).mean()])
+        datamean=pd.concat([datamean,chunk2.rolling(window,center=True,min_periods=1,step=window).mean()[1:]])
         #datamean=pd.concat([datamean,chunk2.rolling(window,center=True,min_periods=1).mean()[int(window/2)::window]])   # using step argument instead of slicing shulud be more efficient but need a higher version of pandas 
         
         
         
         i_rest=int(chunk2.index[-1]-(chunk2.index[-1]-chunk2.index[0])%window) # get index of last window of running window 
         chunkrest=chunk.loc[i_rest:]
+        
         
         
         # to be dropped
@@ -1013,7 +1018,10 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
             chunk2['A3']=np.sqrt(chunk2.I3**2+chunk2.Q3**2)
             chunk2['phase3']=np.arctan2(chunk2.I3,chunk2.Q3)
             data=pd.concat([data,chunk2.loc[:i_rest]])
-    
+        
+        # stop loading data if ovet T_max
+        if T_max>0 and T_max*SPS<=i_rest:
+            break
         
     # get phase and amplitude
     datamean['A1']=np.sqrt(datamean.I1**2+datamean.Q1**2)
@@ -1523,6 +1531,7 @@ def Fit_climbs(datamean,params,
     
     
     freq=params['f']
+    
     if d_coils==0:
         try:
             d_coils=params['d_Rx']
@@ -1586,7 +1595,7 @@ def Fit_climbs(datamean,params,
     
         
         fig,[ax,ax2]=pl.subplots(2,1)
-        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq/2,params['name']))
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
         for i,d in enumerate(data_climbs2): 
             ax.plot(d.h_tot_ref,d.Q_Rx1,'--',label=f'i={i:d}')
             ax2.plot(d.h_tot_ref,d.I_Rx1,'--') 
@@ -1600,7 +1609,7 @@ def Fit_climbs(datamean,params,
         
         
         fig,[ax,ax2]=pl.subplots(2,1)
-        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq/2,params['name']))
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
         for i,d in enumerate(data_climbs2): 
             ax.plot(d.Q_Rx1,d.Q_modeled,'x',label=f'i={i:d}')
             ax2.plot(d.I_Rx1,d.I_modeled,'x',label=f'i={i:d}')
@@ -1617,7 +1626,7 @@ def Fit_climbs(datamean,params,
         
         
         fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
-        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq/2,params['name']))
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
         ax.plot(data_climbs.time,data_climbs.Q_Rx1_corr,'x',label='LEM')
         ax.plot(data_climbs.time,data_climbs.Q_modeled,'--k',label='modeled')
         ax.set_ylabel('amplitude Q (ppt)')
@@ -1748,7 +1757,7 @@ def interpolData_d(data,datamean,proplist):
     
     for p in proplist:
         x=np.array(getattr(data,p))
-        datamean[p]=x[ind]+(x[ind]-x[ind-1])*d_dist
+        datamean.loc[:,p]=x[ind]+(x[ind]-x[ind-1])*d_dist
 
 
 
@@ -2291,8 +2300,8 @@ def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
     
     
     # # Print the fitting parameters
-    print(f'Fitted parameters: g = {res.x[0]:.6f}, phi = {res.x[1]:.4e}')
-    print(f'Fitted parameters 3: g = {params2[0]:.6f}, phi = {res3.x[0]:.4e}')
+    print(f'Direct fit: g = {res.x[0]:.6f}, phi = {res.x[1]:.4e}')
+    print(f'Fit MagZ+fit phi: g = {params2[0]:.6f}, phi = {res3.x[0]:.4e}')
 
 
     if plot:
@@ -2302,7 +2311,7 @@ def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
         Z_fit3 = trans(x, params2[0], res3.x[0])
 
         # # Plot the data and the fit curve
-        pl.figure(figsize=(10,4))
+        pl.figure(figsize=(12,4))
         ax=pl.subplot(131)
         ax2=pl.subplot(132)
         ax3=pl.subplot(133)
@@ -2311,6 +2320,8 @@ def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
         ax.plot(calQ, np.imag(Z_fit3), 'bx', label=' Fit magZ + fit phi')
         ax.set_xlabel('Q Voltage')
         ax.set_ylabel('quadrature(Z)')
+
+        
         ax2.scatter(calI, ZI, label='Data')
         ax2.plot(calI, np.real(Z_fit), 'rx', label=' Fit g and phi')
         ax2.plot(calI, np.real(Z_fit3), 'bx', label=' Fit magZ + fit phi')
@@ -2326,6 +2337,19 @@ def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
         ax2.legend()
         ax.legend()
         ax3.legend()
+        ax3.text(0.15,0.13,
+                f'Direct fit: g = {res.x[0]:.3f}, phi = {res.x[1]:.3e}',    
+                horizontalalignment='left',
+                verticalalignment='center',
+                fontsize=8,
+                transform = ax3.transAxes)
+        ax3.text(0.15,0.08,
+                f'Fit MagZ+fit phi: g = {params2[0]:.3f}, phi = {res3.x[0]:.3e}',    
+                horizontalalignment='left',
+                verticalalignment='center',
+                fontsize=8,
+                transform = ax3.transAxes)
+        
         pl.tight_layout()
     
     g=res.x[0]
@@ -2419,14 +2443,17 @@ def CheckCalibration(dataINS,datamean,params,f,Rx_ch=['ch1'],plot=True):
                 pl.title(f'Cal{k+1:d}, {ch:s}' )
     
     # get calibration parameters from params        
-    CalParams={'Rs': params['Rs'],
-               'Ls': np.ones_like(params['Rs'])*params['L_CalCoil'],
-               'Ac': params['A_CalCoil'],
-               'Nc': params['N_CalCoil'],
-               'dR': params['d_Rx'],
-               'dB': params['d_Bx'],
-               'dC': params['d_Cx'],
-               }
+    try:
+        CalParams={'Rs': params['Rs'],
+                   'Ls': np.ones_like(params['Rs'])*params['L_CalCoil'],
+                   'Ac': params['A_CalCoil'],
+                   'Nc': params['N_CalCoil'],
+                   'dR': params['d_Rx'],
+                   'dB': params['d_Bx'],
+                   'dC': params['d_Cx'],
+                   }
+    except:
+          CalParams={}
 
                                
     
@@ -2550,15 +2577,19 @@ def CheckCalibration_multiFreq(dataINS,datamean,params,plot=True):
                     pl.title(f'Cal{k+1:d}, {ch:s}, f{r:d}' )
     
     # get calibration parameters from params        
-    CalParams={'Rs': params['Rs'],
-               'Ls': np.ones_like(params['Rs'])*params['L_CalCoil'],
-               'Ac': params['A_CalCoil'],
-               'Nc': params['N_CalCoil'],
-               'dR': params['d_Rx'],
-               'dB': params['d_Bx'],
-               'dC': params['d_Cx'],
-               }
-        
+    try:
+        CalParams={'Rs': params['Rs'],
+                   'Ls': np.ones_like(params['Rs'])*params['L_CalCoil'],
+                   'Ac': params['A_CalCoil'],
+                   'Nc': params['N_CalCoil'],
+                   'dR': params['d_Rx'],
+                   'dB': params['d_Bx'],
+                   'dC': params['d_Cx'],
+                   }
+    except:
+          CalParams={}
+          
+         
     
     calQs2=[]
     calIs2=[]
