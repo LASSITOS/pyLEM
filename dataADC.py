@@ -1638,6 +1638,299 @@ def Fit_climbs(datamean,params,
 
     return data_climbs
 
+
+
+def Fit_climbs_emp(datamean,params,
+                   t_str,t_stp, h_tot,  plot=True,h_lim=15):
+    """
+    
+
+    Parameters
+    ----------
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    params : dictonary
+        Parameters for processed LEM data.
+    t_str : list,array
+        start times for climbs (up or down)
+    t_stp : list,array
+        stop times for climbs (up or down)
+    h_tot : list,array
+        total thickness (ice+snow) at climbs location
+    plot : TYPE, optional
+        Plot figures?. The default is True.
+    h_lim : Float, optional
+            Maximum distance to water to be used for fit. The default is 15 m.
+
+    Returns
+    -------
+    None.
+
+    """
+    
+    if len(t_str)!=len(t_stp) or len(t_str)!=len(h_tot) :
+        print('t_str,t_stp, h_tot,w_depth needs to have same length. Stopping fit of climbs !!!')
+        return None
+    
+    
+    freq=params['f']
+    
+    
+    
+    # get data climbs
+    lims=[]    
+    for i,[st,stp] in enumerate(zip(t_str,t_stp)):
+        lims_i=[np.searchsorted(datamean.time.values,st),np.searchsorted(datamean.time.values,stp)]
+        lims.append(lims_i)
+    lims2=np.array([datamean.index[np.array(lims)[:,0]],datamean.index[np.array(lims)[:,1]]]).transpose()
+    
+    data_climbs=datamean.iloc[lims[0][0]:lims[0][1]].copy()
+    for i in range(1,len(t_stp)):
+        data_climbs=pd.concat([data_climbs,datamean.iloc[lims[i][0]:lims[i][1]].copy()])
+        
+    # add data ice from drillholes
+    data_climbs['h_tot_ref']=data_climbs.h_Laser.values
+    
+    for i,l in enumerate(lims2):
+        data_climbs.loc[lims2[i,0]:lims2[i,1],'h_tot_ref']+=h_tot[i]
+    
+    
+    # fit data
+    def func(x, a, b,c):
+        return a*np.log(x+b)+c
+
+    # fitQ=optimize.curve_fit(func,  data_climbs.Q_Rx1, data_climbs['h_tot_ref'],[-3.5,0,-3.2])
+    # fitI=optimize.curve_fit(func,  data_climbs.Q_Rx1, data_climbs['h_tot_ref'],[1e3,-0.01,-250])
+    
+    d=data_climbs.query(f'h_tot_ref < {h_lim:.2f}')[['Q_Rx1','I_Rx1','h_tot_ref']]
+    
+    ind=~np.isnan(np.log(d.Q_Rx1).values)
+    fitQ=linregress(np.log(d.Q_Rx1)[ind],d['h_tot_ref'][ind])
+    ind=~np.isnan(np.log(d.I_Rx1).values)
+    fitI=linregress(np.log(d.I_Rx1)[ind],d['h_tot_ref'][ind])
+    
+    
+    params['fitQ_climbs_emp']=fitQ
+    params['fitI_climbs_emp']=fitI
+    
+    data_climbs['h_water_empQ']=np.log(data_climbs.Q_Rx1)*fitQ.slope+fitQ.intercept
+    data_climbs['h_water_empI']=np.log(data_climbs.I_Rx1)*fitI.slope+fitI.intercept
+    
+    datamean['h_water_empQ']=np.log(datamean.Q_Rx1)*fitQ.slope+fitQ.intercept
+    datamean['h_water_empI']=np.log(datamean.I_Rx1)*fitI.slope+fitI.intercept
+
+    datamean['h_tot_empQ']=datamean.h_water_empQ-datamean.h_Laser
+    datamean['h_tot_empI']=datamean.h_water_empI-datamean.h_Laser
+    
+    if plot:
+        
+        data_climbs2=[]
+        for i,l in enumerate(lims2):
+            data_climbs2.append(data_climbs.loc[lims2[i,0]:lims2[i,1]].copy())
+    
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs2): 
+            ax.plot(d.h_tot_ref,np.log(d.Q_Rx1),'--',label=f'i={i:d}')
+            ax2.plot(d.h_tot_ref,np.log(d.I_Rx1),'--') 
+        
+        ax.plot(d.h_tot_ref,(d.h_tot_ref-fitQ.intercept)/fitQ.slope,':k',label='fit')
+        ax2.plot(d.h_tot_ref,(d.h_tot_ref-fitI.intercept)/fitI.slope,':k') 
+        
+        ax.set_ylabel('log( Q) (-)')
+        ax.set_xlabel('h water (m)')
+        ax2.set_ylabel('log(I) (ppt)')
+        ax2.set_xlabel('h water (m)')
+        ax.legend()
+        ax2.legend()
+        pl.tight_layout()
+    
+    
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs2): 
+            ax.plot(d.h_tot_ref,d.Q_Rx1,'--',label=f'i={i:d}')
+            ax2.plot(d.h_tot_ref,d.I_Rx1,'--') 
+        ax.plot(d.h_tot_ref,np.exp((d.h_tot_ref-fitQ.intercept)/fitQ.slope),':k',label='fit')
+        ax2.plot(d.h_tot_ref,np.exp((d.h_tot_ref-fitI.intercept)/fitI.slope),':k') 
+            
+        ax.set_ylabel('amplitude Q (ppt)')
+        ax.set_xlabel('h water (m)')
+        ax2.set_ylabel('amplitude I(ppt)')
+        ax2.set_xlabel('h water (m)')
+        ax.legend()
+        ax2.legend()
+        pl.tight_layout()
+        
+        
+        fig,ax=pl.subplots(1,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        ax.plot(data_climbs.h_tot_ref,data_climbs.h_water_empQ,'x',label='h_Q')
+        ax.plot(data_climbs.h_tot_ref,data_climbs.h_water_empI,'x',label='h_I')  
+        ax.plot([0,30],[0,30],':k')
+        ax.set_ylabel('h_water LEM emp  (m)')
+        ax.set_xlabel('h_water Laser (m)')
+        ax.legend()
+        pl.tight_layout()
+        
+        
+        
+        # fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+        # ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        # ax.plot(data_climbs.time,data_climbs.Q_Rx1_corr,'x',label='LEM')
+        # ax.plot(data_climbs.time,np.exp((data_climbs.h_tot_ref-fitQ.intercept)/fitQ.slope),'--k',label='modeled')
+        # ax.set_ylabel('amplitude Q (ppt)')
+        # ax.set_xlabel('time (s)')
+        # ax2.plot(data_climbs.time,data_climbs.I_Rx1_corr,'x',label='LEM')
+        # ax2.plot(data_climbs.time,np.exp((data_climbs.h_tot_ref-fitQ.intercept)/fitQ.slope),'--k',label='modeled')
+        # ax2.set_ylabel('amplitude I  (ppt)')
+        # ax2.set_xlabel('time (s)')
+
+    return data_climbs
+
+
+
+def Fit_climbs_emp_corr(datamean,params,
+                   t_str,t_stp, h_tot,  plot=True,h_lim=15):
+    """
+    
+
+    Parameters
+    ----------
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    params : dictonary
+        Parameters for processed LEM data.
+    t_str : list,array
+        start times for climbs (up or down)
+    t_stp : list,array
+        stop times for climbs (up or down)
+    h_tot : list,array
+        total thickness (ice+snow) at climbs location
+    plot : TYPE, optional
+        Plot figures?. The default is True.
+    h_lim : Float, optional
+            Maximum distance to water to be used for fit. The default is 15 m.
+
+    Returns
+    -------
+    None.
+
+    """
+    
+    if len(t_str)!=len(t_stp) or len(t_str)!=len(h_tot) :
+        print('t_str,t_stp, h_tot,w_depth needs to have same length. Stopping fit of climbs !!!')
+        return None
+    
+    
+    freq=params['f']
+    
+    
+    
+    # get data climbs
+    lims=[]    
+    for i,[st,stp] in enumerate(zip(t_str,t_stp)):
+        lims_i=[np.searchsorted(datamean.time.values,st),np.searchsorted(datamean.time.values,stp)]
+        lims.append(lims_i)
+    lims2=np.array([datamean.index[np.array(lims)[:,0]],datamean.index[np.array(lims)[:,1]]]).transpose()
+    
+    data_climbs=datamean.iloc[lims[0][0]:lims[0][1]].copy()
+    for i in range(1,len(t_stp)):
+        data_climbs=pd.concat([data_climbs,datamean.iloc[lims[i][0]:lims[i][1]].copy()])
+        
+    # add data ice from drillholes
+    data_climbs['h_tot_ref']=data_climbs.h_Laser.values
+    
+    for i,l in enumerate(lims2):
+        data_climbs.loc[lims2[i,0]:lims2[i,1],'h_tot_ref']+=h_tot[i]
+    
+    
+    # fit data
+    def func(x, a, b,c):
+        return a*np.log(x+b)+c
+
+    # fitQ=optimize.curve_fit(func,  data_climbs.Q_Rx1_corr, data_climbs['h_tot_ref'],[-3.5,0,-3.2])
+    # fitI=optimize.curve_fit(func,  data_climbs.I_Rx1_corr, data_climbs['h_tot_ref'],[1e3,-0.01,-250])
+    
+    d=data_climbs.query(f'h_tot_ref < {h_lim:.2f}')[['Q_Rx1_corr','I_Rx1_corr','h_tot_ref']]
+    
+    ind=~np.isnan(np.log(d.Q_Rx1_corr).values)
+    fitQ=linregress(np.log(d.Q_Rx1_corr)[ind],d['h_tot_ref'][ind])
+    ind=~np.isnan(np.log(d.I_Rx1_corr).values)
+    fitI=linregress(np.log(d.I_Rx1_corr)[ind],d['h_tot_ref'][ind])
+    
+    
+    params['fitQ_climbs_emp_corr']=fitQ
+    params['fitI_climbs_emp_corr']=fitI
+    
+    data_climbs['h_water_empQ']=np.log(data_climbs.Q_Rx1_corr)*fitQ.slope+fitQ.intercept
+    data_climbs['h_water_empI']=np.log(data_climbs.I_Rx1_corr)*fitI.slope+fitI.intercept
+    
+    datamean['h_water_empQ']=np.log(datamean.Q_Rx1_corr)*fitQ.slope+fitQ.intercept
+    datamean['h_water_empI']=np.log(datamean.I_Rx1_corr)*fitI.slope+fitI.intercept
+
+    datamean['h_tot_empQ']=datamean.h_water_empQ-datamean.h_Laser
+    datamean['h_tot_empI']=datamean.h_water_empI-datamean.h_Laser
+    
+    if plot:
+        
+        data_climbs2=[]
+        for i,l in enumerate(lims2):
+            data_climbs2.append(data_climbs.loc[lims2[i,0]:lims2[i,1]].copy())
+    
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs2): 
+            ax.plot(d.h_tot_ref,np.log(d.Q_Rx1_corr),'--',label=f'i={i:d}')
+            ax2.plot(d.h_tot_ref,np.log(d.I_Rx1_corr),'--') 
+        
+        ax.plot(d.h_tot_ref,(d.h_tot_ref-fitQ.intercept)/fitQ.slope,':k',label='fit')
+        ax2.plot(d.h_tot_ref,(d.h_tot_ref-fitI.intercept)/fitI.slope,':k') 
+        
+        ax.set_ylabel('log( Q) (-)')
+        ax.set_xlabel('h water (m)')
+        ax2.set_ylabel('log(I) (ppt)')
+        ax2.set_xlabel('h water (m)')
+        ax.legend()
+        ax2.legend()
+        pl.tight_layout()
+    
+    
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs2): 
+            ax.plot(d.h_tot_ref,d.Q_Rx1_corr,'--',label=f'i={i:d}')
+            ax2.plot(d.h_tot_ref,d.I_Rx1_corr,'--') 
+        ax.plot(d.h_tot_ref,np.exp((d.h_tot_ref-fitQ.intercept)/fitQ.slope),':k',label='fit')
+        ax2.plot(d.h_tot_ref,np.exp((d.h_tot_ref-fitI.intercept)/fitI.slope),':k') 
+            
+        ax.set_ylabel('amplitude Q (ppt)')
+        ax.set_xlabel('h water (m)')
+        ax2.set_ylabel('amplitude I(ppt)')
+        ax2.set_xlabel('h water (m)')
+        ax.legend()
+        ax2.legend()
+        pl.tight_layout()
+        
+        
+        fig,ax=pl.subplots(1,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        ax.plot(data_climbs.h_tot_ref,data_climbs.h_water_empQ,'x',label='h_Q')
+        ax.plot(data_climbs.h_tot_ref,data_climbs.h_water_empI,'x',label='h_I')  
+        ax.plot([0,30],[0,30],':k')
+        ax.set_ylabel('h_water LEM emp  (m)')
+        ax.set_xlabel('h_water Laser (m)')
+        ax.legend()
+        pl.tight_layout()
+
+    return data_climbs
+
+
+
+
+
 def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
 
     # parameters for the synthetic model
@@ -2020,6 +2313,42 @@ def get_values(d,i_a,i_b):
     I_max=np.abs(d.iloc[i_a:i_b]-I_mean).max()
     return I_med,I_mean,I_std, I_max
 
+
+
+#%% Code for exporting data 
+
+def exportThim(datamean,params,): 
+    datexp=datamean[['A_Rx1','phase_Rx1','Q_Rx1_corr','I_Rx1_corr','hw_invQ','h_water_empQ','h_water_empI','time','d', 'lat', 'lon',
+    'h_Laser',]]
+    datexp['Q_Rx']=datexp.A_Rx1*np.sin(datexp.phase_Rx1)
+    datexp['I_Rx']=datexp.A_Rx1*np.cos(datexp.phase_Rx1)
+    
+    
+    datexp.to_csv(pcpath+ r'\2024_Fieldwork\LEM\data\export\dataT'+filename+'.csv')
+    
+    f=open(pcpath+ r'\2024_Fieldwork\LEM\data\export\paramsT'+filename+'.csv','w' )
+    
+    f.write('file: '+filename)
+    f.write('\nfreq: {:.1f} kHz'.format(params['f']))
+    
+    
+    f.write('\n\nZ=g(I-I0 +i(Q-Q0)*exp(i*phi)')
+    f.write('\n\tg: {:.2f} ppt'.format(params['CalParams']['g'][0]*params['fitQ_climbs'].slope))
+    f.write('\n\tphi: {:.5f} rad'.format(params['CalParams']['phi'][0]))
+    f.write('\n\tQ0: {:.5f}'.format(params['CalParams']['Q0'][0]))
+    f.write('\n\tI0: {:.5f}'.format(params['CalParams']['I0'][0]))
+    
+    f.write('\n\nDistance form water derived from Quadrature')
+    f.write('\nh_Q=a*ln(Q)+c')
+    f.write('\n\ta: {:.2f} m'.format(params['fitQ_climbs_emp_corr'].slope))
+    f.write('\n\tc: {:.5f} m'.format(params['fitQ_climbs_emp_corr'].intercept))
+    
+    f.write('\n\nDistance form water derived from Inphase')
+    f.write('\nh_I=a*ln(I)+c')
+    f.write('\n\ta: {:.2f} m'.format(params['fitI_climbs_emp_corr'].slope))
+    f.write('\n\tc: {:.5f} m'.format(params['fitI_climbs_emp_corr'].intercept))
+        
+    f.close()
 
 
 #%%  various functions
