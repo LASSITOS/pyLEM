@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as pl
 import os,sys
 from cmcrameri import cm
-from geopy import distance
+from geopy import distance 
 import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
@@ -1017,10 +1017,10 @@ def plot_summary(data,extent,cmap=cm.batlow,heading=True,title=''):
     
     ax1 = fig.add_subplot(spec[3:5, 0])
     ax1.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,
-              [distance.distance((data.PINS1.lat[0],data.PINS1.lon[0]),(data.PINS1.lat[0],x)).m for x in data.PINS1.lon ],
+              [distance.distance((data.PINS1.lat[0],data.PINS1.lon[0]),(data.PINS1.lat[0],x)).m*np.sign(x-data.PINS1.lon[0])  for x in data.PINS1.lon ],
               'x:',label='East-West')
     ax1.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,
-              [distance.distance((data.PINS1.lat[0],data.PINS1.lon[0]),(x,data.PINS1.lon[0])).m for x in data.PINS1.lat ],
+              [distance.distance((data.PINS1.lat[0],data.PINS1.lon[0]),(x,data.PINS1.lon[0])).m*np.sign(x-data.PINS1.lat[0]) for x in data.PINS1.lat ],
               '+:',label='North-South')
     ax1.set_ylabel('Distance (m)')
     ax1.legend()

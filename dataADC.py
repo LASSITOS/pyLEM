@@ -653,6 +653,86 @@ def filter_outliers(datamean,params,window_size=10,deviation=3.0,plot=False):
     return filtQ,filtI
 
 
+def filter_median(data,column,window_size=10):
+    """
+    Filter outliers over a running window and substitute them with median. Use Hampel function. 
+    Datapoints are considered outliers if the deviation excheed the Median Absolute Deviation (MAD)
+    multiplied by deviation parameter. 
+
+    Parameters
+    ----------
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    params : dictonary
+        Parameters for processed LEM data.
+    window_size : TYPE, optional
+        Number of datapoints in running window. The default is 10.
+    deviation : TYPE, optional
+        Define the deviation form the MAD for considering datapoints as outliers . The default is 3.0.
+    plot : TYPE, optional
+        Plot filtered data. The default is False.
+
+    Returns
+    -------
+    filtQ : TYPE
+        DESCRIPTION.
+    filtI : TYPE
+        DESCRIPTION.
+
+    """
+
+    try: 
+        datamean.Q_Rx1=datamean['Q_Rx1_original'].copy()
+        datamean.I_Rx1=datamean['I_Rx1_original'].copy()
+    except KeyError:
+        datamean['Q_Rx1_original']=datamean.Q_Rx1.values
+        datamean['I_Rx1_original']=datamean.I_Rx1.values
+        
+    filtQ = hampel(datamean.Q_Rx1_original, window_size,deviation)
+    filtI = hampel(datamean.I_Rx1_original, window_size,deviation)
+    
+    datamean.Q_Rx1=filtQ.filtered_data.values
+    datamean.I_Rx1=filtI.filtered_data.values
+    
+    ind=filtQ.thresholds>50*filtQ.medians
+    filtQ.thresholds[ind]=50*filtQ.medians[ind]
+    ind=filtI.thresholds>50*filtI.medians
+    filtI.thresholds[ind]=50*filtI.medians[ind]
+    
+    if plot:
+        fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+        ax.plot(datamean.time,datamean['Q_Rx1_original'].values,':',label='Q Rx')
+        ax.fill_between(datamean.time, filtQ.medians + filtQ.thresholds,
+                             filtQ.medians - filtQ.thresholds, color='gray', 
+                             alpha=0.5, label='Median +- Threshold')
+        ax.plot(datamean.time,filtQ.filtered_data,'x',label='filtered')
+        ax.scatter(datamean.time.values[filtQ.outlier_indices],
+                   datamean[f'Q_Rx1_original'].values[filtQ.outlier_indices],
+                   marker='o',edgecolor='g',facecolor='None',label='outliers')
+        ax.set_title('window={:d}, deviation={:.1f} '.format(window_size,deviation))
+        ax.set_ylabel('Q (-)')
+        ax.set_xlabel('time (s)')
+        ax.legend()
+        ax.set_ylim([np.min(filtQ.filtered_data.values),np.max(filtQ.filtered_data.values)])
+        
+        ax2.plot(datamean.time,datamean['I_Rx1_original'].values,':',label='I Rx')
+        ax2.fill_between(datamean.time, filtI.medians + filtI.thresholds,
+                             filtI.medians - filtI.thresholds, color='gray', 
+                             alpha=0.5, label='Median +- Threshold')
+        
+        ax2.plot(datamean.time,filtI.filtered_data,'x',label='filtered')
+        ax2.scatter(datamean.time.values[filtI.outlier_indices],
+                    datamean[f'I_Rx1_original'].values[filtI.outlier_indices],
+                   marker='o',edgecolor='g',facecolor='None',label='outliers')
+        ax2.set_ylabel('I (-)')
+        ax2.set_xlabel('time (s)')
+        ax2.legend()
+        ax2.set_ylim([np.min(filtI.filtered_data.values),np.max(filtI.filtered_data.values)])
+
+            
+    return 
+
+
 # %% load raw data and Lock-In filter
 
 # def LockInADCrawfile(path,name, Tx_ch='ch2', Rx_ch=['ch1'],
@@ -1350,7 +1430,7 @@ def plot_QandI(datamean,params,Rx_ch,MultiFreq,title=''):
 
 
 
-def plot_QIandH(datamean,params,title=''):
+def plot_QIandH(datamean,params,title='',log=False,xlim=[0.1,1]):
     
     fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
     
@@ -1369,14 +1449,17 @@ def plot_QIandH(datamean,params,title=''):
     ax1.plot(datamean.time,datamean.h_Laser,'--k')
     ax1b.plot(datamean.time,datamean.h_GPS-datamean.h_Laser,'--b')
     ax.set_ylabel('amplitude Q (ppt)')
-    pl.xlabel('time (s)')
+    ax.set_xlabel('time (s)')
     ax1.set_ylabel('h Laser (m)')
     ax1b.set_ylabel('h Laser - h GPS (m)')
     ax1.yaxis.label.set_color('k')
     ax1b.yaxis.label.set_color('b')
     
     
-    ax.set_ylim(-0.1,1)
+    ax.set_ylim(xlim)
+    if log:
+        ax.set_yscale('log')
+    
     
     ax3=ax2.twinx()
     ax3b=ax2.twinx()
@@ -1386,7 +1469,7 @@ def plot_QIandH(datamean,params,title=''):
     ax3.plot(datamean.time,datamean.h_Laser,'--k')
     ax3b.plot(datamean.time,datamean.h_GPS-datamean.h_Laser,'--b')
     ax2.set_ylabel('amplitude I(ppt)')
-    ax3.set_xlabel('time (s)')
+    ax2.set_xlabel('time (s)')
     ax3.set_ylabel('h Laser (m)')
     ax3b.set_ylabel('h Laser - h GPS (m)')
     ax3.yaxis.label.set_color('k')
@@ -1492,8 +1575,9 @@ def Fit_climbs(datamean,params,
                w_cond=2408,d_coils=0,
                plot=True):
     """
+    Fit climbs to physical model (EMagPy)
     
-
+    
     Parameters
     ----------
     datamean : pandas.Dataframe
@@ -1643,7 +1727,7 @@ def Fit_climbs(datamean,params,
 def Fit_climbs_emp(datamean,params,
                    t_str,t_stp, h_tot,  plot=True,h_lim=15):
     """
-    
+    Fit climbs to emphirical model
 
     Parameters
     ----------
@@ -2585,6 +2669,7 @@ def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
     calZ=np.sqrt(calI**2+calQ**2)
     # print(calZ)
     
+    # get theoretical values
     if len(CalParams)>0:
         Z,ZI,ZQ,magZ=refCalibration(f,**CalParams)
         print('Using data from Logfile for calibration')
@@ -2631,6 +2716,9 @@ def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
     # # Print the fitting parameters
     print(f'Direct fit: g = {res.x[0]:.6f}, phi = {res.x[1]:.4e}')
     print(f'Fit MagZ+fit phi: g = {params2[0]:.6f}, phi = {res3.x[0]:.4e}')
+
+    g=res.x[0]
+    phi=res.x[1]
 
 
     if plot:
@@ -2681,8 +2769,23 @@ def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
         
         pl.tight_layout()
     
-    g=res.x[0]
-    phi=res.x[1]
+    
+        pl.figure(figsize=(5,4))
+        ax=pl.subplot(111)
+        ax.scatter(ZI, ZQ, label='theoretical values')
+        ax.plot(calI*g, calQ*g, 'rx', label='Data*g')
+        ax.plot(np.real(Z_fit), np.imag(Z_fit), 'bx', label=' Fitted Data')
+        ax.plot([0,0],ax.get_ylim(), '--k')
+        ax.plot(ax.get_xlim(),[0,0], '--k')
+        ax.set_xlabel('Inphase')
+        ax.set_ylabel('quadrature')
+        ax.legend()
+        ax.text(0.15,0.13,
+            f'Fit parameters: g = {res.x[0]:.3f}, phi = {res.x[1]:.3e}',    
+            horizontalalignment='left',
+            verticalalignment='center',
+            fontsize=8,
+            transform = ax.transAxes)
         
         
     return g,phi,[res,params2,res3]
