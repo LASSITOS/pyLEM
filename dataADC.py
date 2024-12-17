@@ -23,7 +23,10 @@ from scipy.optimize import curve_fit,least_squares
 from scipy.stats import linregress
 
 # non anaconda libraries
-from hampel import hampel   # pip install hampel
+try:
+    from hampel import hampel   # pip install hampel
+except ModuleNotFoundError:
+    print('No module named "hampel"!!!! Install it otherwhise outlier filter will not work!!!')   
 from cmcrameri import cm as cmCrameri
 
 
