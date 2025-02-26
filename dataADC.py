@@ -438,7 +438,7 @@ def save_LEM_csv(datamean,params,columns=[],fileOutput=''):
         #save datamean to file
         #----------------------------
         # columns to save
-        columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
+        columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'diff_hGPSLaser','roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
                   'signQ', 'TempLaser' ] #
         
         for i,ch in enumerate(params['Rx_ch']):
@@ -465,14 +465,17 @@ def save_LEM_csv(datamean,params,columns=[],fileOutput=''):
         #save datamean to file
         #----------------------------
         # columns to save
-        columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
+        columns+=['t', 'time','TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'diff_hGPSLaser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  
                   'signQ', 'TempLaser',
                   'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #
     
 
         for i,ch in enumerate(params['Rx_ch']):
             columns.extend([f'I_Rx{i+1:d}',f'Q_Rx{i+1:d}',f'A_Rx{i+1:d}',f'phase_Rx{i+1:d}'])
-
+            
+        
+        columns.extend(['h_water_empQ', 'h_water_empI', 'h_tot_empQ', 'h_tot_empI'])
+            
             
     # remove columns to save that are not in datamean
     for c in columns:
@@ -2139,7 +2142,86 @@ def interpolData_d(data,datamean,proplist):
         x=np.array(getattr(data,p))
         datamean.loc[:,p]=x[ind]+(x[ind]-x[ind-1])*d_dist
 
+#%% Code for plotting on map
 
+def plot_xy(datamean,attr,origin=0,colorlim=[]):
+    
+    x,y=get_XY(datamean,origin=origin)
+    
+    
+    
+    fig,ax=pl.subplots(1,1)
+    im=ax.scatter(x,y,c=datamean[attr],cmap=cm.batlow,marker='x')
+    c=pl.colorbar(im, label=attr)
+    if len(colorlim)>0:
+        pl.clim(colorlim)
+    
+    ax.set_ylabel('y (m)')
+    ax.set_xlabel('x (m)')
+    pl.tight_layout()
+
+    return fig
+
+def get_XY(datamean,origin=0):  
+    """
+    Transform lat,lon to local coordinates around origin point
+
+    Parameters
+    ----------
+    point : TYPE
+        x,y coordinates to point.
+    origin : TYPE
+        if int: index of coordinate to se as origin of local coordinate system
+        if: [lat,lon] coordinates of origin of local reference system.
+
+    Returns
+    -------
+    x : local x-coordinate in meters (west-east)
+    y : local y-coordinate in meters (south- north)
+
+    """
+    
+    origin=np.array(origin)
+    if len(origin.shape)==0:  
+        p0=[datamean.lat.values[origin],datamean.lon.values[origin]]
+    elif len(origin.shape)==1:  
+            p0=origin    
+    
+    d=[]
+    bearing=[]
+    for lat,lon in zip(datamean.lat,datamean.lon):
+        d.append(distance.distance(p0,[lat,lon]).m)
+        bearing.append(get_bearing(p0,[lat,lon]))
+    
+    d=np.array(d)
+    bearing=np.array(bearing)
+    
+    y=d*np.cos(bearing/360*2*np.pi)
+    x=d*np.sin(bearing/360*2*np.pi)
+    return x,y
+
+def get_bearing(start, end):
+    # if (type(start) != tuple) or (type(end) != tuple):
+    #     raise TypeError("Only tuples are supported as arguments")
+
+    lat1 = math.radians(start[0])
+    lat2 = math.radians(end[0])
+
+    diffLong = math.radians(end[1] - start[1])
+
+    x = math.sin(diffLong) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - (math.sin(lat1)
+                                           * math.cos(lat2) * math.cos(diffLong))
+
+    initial_bearing = math.atan2(x, y)
+
+    # Now we have the initial bearing but math.atan2 return values
+    # from -180° to + 180° which is not what we want for a compass bearing
+    # The solution is to normalize the initial bearing as shown below
+    initial_bearing = math.degrees(initial_bearing)
+    compass_bearing = (initial_bearing + 360) % 360
+
+    return compass_bearing
 
 #%%  Sync INS/Laser and ADC
 
@@ -2167,6 +2249,9 @@ def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
         datamean.rename(columns={'elevation':'h_GPS'}, inplace=True)
         interpolData(dataINS.Laser,datamean,['h_corr', 'roll', 'pitch','signQ', 'T'])
         datamean.rename(columns={"T": "TempLaser",'h_corr':'h_Laser'}, inplace=True)
+        
+        datamean['diff_hGPSLaser']=datamean.h_GPS-datamean.h_Laser
+        
     except AttributeError as error: 
          print(error)
          print("Can't find right INS data. Continue without them.")
