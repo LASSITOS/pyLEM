@@ -2151,11 +2151,12 @@ def plot_xy(datamean,attr,origin=0,colorlim=[]):
     
     
     fig,ax=pl.subplots(1,1)
-    im=ax.scatter(x,y,c=datamean[attr],cmap=cm.batlow,marker='x')
-    c=pl.colorbar(im, label=attr)
-    if len(colorlim)>0:
-        pl.clim(colorlim)
     
+    if len(colorlim)>0:
+        im=ax.scatter(x,y,c=datamean[attr],cmap=cm.batlow,marker='x',vmin=colorlim[0],vmax=colorlim[1])
+    else:
+        im=ax.scatter(x,y,c=datamean[attr],cmap=cm.batlow,marker='x')
+    c=pl.colorbar(im, label=attr)
     ax.set_ylabel('y (m)')
     ax.set_xlabel('x (m)')
     pl.tight_layout()
