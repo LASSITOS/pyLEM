@@ -54,6 +54,70 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                      autoCal=True,i_autoCal=0,i_cal=[],
                      INSkargs={},MultiFreq=False,n_freqs=3,iStart=2,dT_start=0,T_max=0,
                      **kwargs):
+    """
+    
+
+    Parameters
+    ----------
+    path : TYPE
+        DESCRIPTION.
+    name : TYPE
+        DESCRIPTION.
+    Tx_ch : TYPE, optional
+        DESCRIPTION. The default is 'ch2'.
+    Rx_ch : TYPE, optional
+        DESCRIPTION. The default is ['ch1','ch2'].
+    plot : TYPE, optional
+        DESCRIPTION. The default is False.
+    plotINS : TYPE, optional
+        DESCRIPTION. The default is False.
+    savefile : TYPE, optional
+        DESCRIPTION. The default is True.
+    saveCSV : TYPE, optional
+        DESCRIPTION. The default is None.
+    savePKL : TYPE, optional
+        DESCRIPTION. The default is None.
+    window : TYPE, optional
+        DESCRIPTION. The default is 1920.
+    freq : TYPE, optional
+        DESCRIPTION. The default is 0.
+    phase0 : TYPE, optional
+        DESCRIPTION. The default is 0.
+    SPS : TYPE, optional
+        DESCRIPTION. The default is 19200.
+    flowpass : TYPE, optional
+        DESCRIPTION. The default is 30.
+    autoCal : TYPE, optional
+        DESCRIPTION. The default is True.
+    i_autoCal : TYPE, optional
+        DESCRIPTION. The default is 0.
+    i_cal : TYPE, optional
+        DESCRIPTION. The default is [].
+    INSkargs : TYPE, optional
+        DESCRIPTION. The default is {}.
+    MultiFreq : TYPE, optional
+        DESCRIPTION. The default is False.
+    n_freqs : TYPE, optional
+        DESCRIPTION. The default is 3.
+    iStart : TYPE, optional
+        DESCRIPTION. The default is 2.
+    dT_start : TYPE, optional
+        DESCRIPTION. The default is 0.
+    T_max : TYPE, optional
+        DESCRIPTION. The default is 0.
+    **kwargs : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    datamean : TYPE
+        DESCRIPTION.
+    dataINS : TYPE
+        DESCRIPTION.
+    params : TYPE
+        DESCRIPTION.
+
+    """
     
     
     # Create dictionary containing parameters
