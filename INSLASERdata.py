@@ -1213,8 +1213,6 @@ def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0,dT=0):
         dT:         Time shift to align timeseries
 
 
-        **kwargs:   argments to be passed to np.genfromtxt
-
         Output:
         -------
         x(t1==t2):    time array in datetime format and data array.

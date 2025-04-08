@@ -2171,8 +2171,8 @@ def EMagPy_forwardmanualdata_old(depths,freqs,d_coils=1.929,plot=True):
 
 
 
-#%% Code for comparing data along transect
 
+#%% Code for comparing data along transect
 
 def interpolData_d(data,datamean,proplist):
     """
@@ -2205,6 +2205,8 @@ def interpolData_d(data,datamean,proplist):
     for p in proplist:
         x=np.array(getattr(data,p))
         datamean.loc[:,p]=x[ind]+(x[ind]-x[ind-1])*d_dist
+
+
 
 #%% Code for plotting on map
 
@@ -2340,7 +2342,78 @@ gps_datetime_np=np.vectorize(gps_datetime, doc='Vectorized `gps_datetime`')
 
 
 
+#%% Functions for integrating external GPS data from UAV (.pos data)
 
+
+def addGPSdata(path, fileGPS,datamean,dataINS):
+    """
+    Add data form external GPS in .pos format to datamean. 
+
+    Parameters
+    ----------
+    path : TYPE
+        filepath
+    file : TYPE
+        gps file name. Must be a .pos 
+
+    Returns
+    -------
+    dataGPS : TYPE
+        DESCRIPTION.
+
+    """
+    
+    dataGPS=pd.read_csv(path+'\\'+fileGPS,header=9, sep='\s+', 
+                       names=['date', 'GPST', 'lat', 'lon', 'height', 'Q', 'ns',
+                              'sdn', 'sde', 'sdu', 'sdne', 'sdeu', 'sdun', 'age', 'ratio',])
+    dataGPS['time']=pd.to_datetime(dataGPS['date']+' '+dataGPS['GPST'])
+
+
+    try:
+         leapS=dataINS.PGPSP.leapS[0]
+    except:
+         leapS=18
+
+    interpolData_GPS(dataGPS,datamean,leap_seconds=leapS)
+
+    return dataGPS
+
+def interpolData_GPS(dataGPS,datamean,
+                     proplist=['lon', 'height', 'Q', 'ns', 'sdn', 'sde', 'sdu',
+                               'sdne', 'sdeu', 'sdun', 'age', 'ratio'],
+                     root='UAVGPS_', leap_seconds=18):
+    """
+    Function to interpolate GPS from external sensor to LEM data. 
+    Data are interpolated linearly according to timestamps and inserted as columns in datamean pandas DataFrame.
+
+    Parameters
+    ----------
+    dataGPS : TYPE
+        DESCRIPTION.
+    datamean : TYPE
+        DESCRIPTION.
+    proplist : TYPE, optional
+        DESCRIPTION. The default is ['lon', 'height', 'Q', 'ns', 'sdn', 'sde', 'sdu',                               'sdne', 'sdeu', 'sdun', 'age', 'ratio'].
+    root : TYPE, optional
+        DESCRIPTION. The default is 'UAVGPS_'.
+
+    Returns
+    -------
+    None.
+
+    """
+    t1=dataGPS.time.values-pd.Timedelta(seconds=leap_seconds)
+    t2=datamean.t.values
+    
+    ind=np.searchsorted(t1,t2)
+    
+    ind[ind>len(t1)-1]=len(t1)-1
+    ind[ind==0]=1
+    d_time=(t2-t1[ind])/(t1[ind]-t1[ind-1]) # factor for linear interpolation 
+    
+    for p in proplist:
+        x=np.array(getattr(dataGPS,p))
+        datamean.loc[:,root+p]=x[ind]+(x[ind]-x[ind-1])*d_time
 
 
 #%%  import UAV_GPX data and add to datamean
