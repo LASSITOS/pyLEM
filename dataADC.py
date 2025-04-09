@@ -1656,6 +1656,230 @@ def Invert_data(datamean,params,
 def Fit_climbs(datamean,params,
                t_str,t_stp, h_tot,w_depth=[],shallow=True,
                w_cond=2408,d_coils=0,
+               plot=True, nodrift=False):
+    """
+    Fit climbs to physical model (EMagPy)
+    
+    
+    Parameters
+    ----------
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    params : dictonary
+        Parameters for processed LEM data.
+    t_str : list,array
+        start times for climbs (up or down)
+    t_stp : list,array
+        stop times for climbs (up or down)
+    h_tot : list,array
+        total thickness (ice+snow) at climbs location
+    w_depth : TYPE, optional
+        water ddepth (ice bottom to sea floor) at climbs location. 
+        Needed only if Shallow=True The default is [].
+    shallow : TYPE, optional
+        if True use 3-layers model for shallow water. The default is True.
+    w_cond : TYPE, optional
+        Conductivity of sea water. The default is 2408.
+    d_coils : TYPE, optional
+        distance of coils. The default is 0. If 0 try to read coil distance from params. 
+        If not found uses default 1.92
+    plot : TYPE, optional
+        Plot figures?. The default is True.
+
+    Returns
+    -------
+    None.
+
+    """
+    
+    
+
+    
+    
+    if len(t_str)!=len(t_stp) or len(t_str)!=len(h_tot) or (shallow and len(t_str)!=len(w_depth)):
+        print('t_str,t_stp, h_tot,w_depth needs to have same length. Stopping fit of climbs !!!')
+        return None
+    
+    # if (not shallow and len(w_depth)==0):
+    #     print(' No wather depth provided. Unable to use shallow water model! Using infinite water depth !!!')
+    
+    
+    if nodrift:  # use old version of function ignoring drift and fitting multiple climbs together!
+       return Fit_climbs_nodrift(datamean,params,
+                                 t_str,t_stp, h_tot,w_depth=w_depth,shallow=shallow,
+                                 w_cond=w_cond,d_coils=d_coils,
+                                 plot=plot)
+    
+    
+    freq=params['f']
+    
+    if d_coils==0:
+        try:
+            d_coils=params['d_Rx']
+        except KeyError():
+            d_coils=1.92
+            
+    
+    
+    # get data climbs
+    lims=[]    
+    for i,[st,stp] in enumerate(zip(t_str,t_stp)):
+        lims_i=[np.searchsorted(datamean.time.values,st),np.searchsorted(datamean.time.values,stp)]
+        lims.append(lims_i)
+    lims2=np.array([datamean.index[np.array(lims)[:,0]],datamean.index[np.array(lims)[:,1]]]).transpose()
+    
+    data_climbs=[]
+    for i in range(0,len(t_stp)):
+        data_climbs.append(datamean.iloc[lims[i][0]:lims[i][1]].copy())
+        
+    # add data ice from drillholes
+    for i,l in enumerate(lims2):
+        data_climbs[i]['h_tot_ref']=data_climbs[i].h_Laser.values
+        data_climbs[i]['w_depth_ref']=0.0
+        data_climbs[i].loc[lims2[i,0]:lims2[i,1],'h_tot_ref']+=h_tot[i]
+        data_climbs[i].loc[lims2[i,0]:lims2[i,1],'w_depth_ref']=w_depth[i]
+        data_climbs[i]['w_depth_ref']+=data_climbs[i]['h_tot_ref']
+    
+    
+    # model climbs data
+    QFits=[]
+    IFits=[]
+    for i,d_climb in enumerate(data_climbs):
+        if not shallow:
+            emag=EMagPy_forwardmanualdata(d_climb.h_Laser.values+np.mean(h_tot[i]),[freq],
+                                           d_coils=d_coils,plot=plot,cond=w_cond)
+        else:
+            emag=EMagPy_forwardmanualdata_shallow(d_climb['w_depth_ref'],d_climb['h_tot_ref'],
+                                                   [freq],
+                                                   d_coils=d_coils,
+                                                   plot=plot,cond=[w_cond,0])
+
+        d_climb['Q_modeled']=emag['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq)].values
+        d_climb['I_modeled']=emag['HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)].values
+        
+        
+        fitQ=linregress(d_climb.Q_Rx1,d_climb.Q_modeled)
+        fitI=linregress(d_climb.I_Rx1,d_climb.I_modeled)
+    
+        QFits.append(fitQ)
+        IFits.append(fitI)
+    
+        d_climb['Q_Rx1_corr']=d_climb.Q_Rx1*fitQ.slope+fitQ.intercept
+        d_climb['I_Rx1_corr']=d_climb.I_Rx1*fitI.slope+fitI.intercept
+    
+    
+    # Interpolate fits (linear) to get rid of drifts 
+    slopes=np.zeros([len(lims2),2])
+    intercepts=np.zeros([len(lims2),2])
+    lim_corr=[]
+    times=[]
+    for i,l in enumerate(lims2):
+        slopes[i,:]=[QFits[i].slope,IFits[i].slope]
+        intercepts[i,:]=[QFits[i].intercept,IFits[i].intercept]
+        lim_corr.append(int(np.mean(l)))
+        times.append(datamean.time[lim_corr[i]])
+    
+    fitSlopeQ=linregress(times,slopes[:,0])
+    fitInterceptQ=linregress(times,intercepts[:,0])   
+    fitSlopeI=linregress(times,slopes[:,1])
+    fitInterceptI=linregress(times,intercepts[:,1])  
+
+    
+    # correct data with fotted parameters
+    datamean['Q_Rx1_corr']=datamean.Q_Rx1*(fitSlopeQ.slope*datamean.time+fitSlopeQ.intercept)+(fitInterceptQ.slope*datamean.time+fitInterceptQ.intercept)
+    datamean['I_Rx1_corr']=datamean.I_Rx1*(fitSlopeI.slope*datamean.time+fitSlopeI.intercept)+(fitInterceptI.slope*datamean.time+fitInterceptI.intercept)
+
+
+    # add fit values to parameters
+    params['fitQ_climbs']=QFits
+    params['fitI_climbs']=IFits
+    
+    params['fitSlopeQ']=fitSlopeQ
+    params['fitInterceptQ']=fitInterceptQ
+    params['fitSlopeI']=fitSlopeI
+    params['fitInterceptI']=fitInterceptI
+    
+    
+    if plot:
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs): 
+            ax.plot(d.h_tot_ref,d.Q_Rx1,'--',label=f'i={i:d}')
+            ax2.plot(d.h_tot_ref,d.I_Rx1,'--') 
+        ax.set_ylabel('amplitude Q (ppt)')
+        ax.set_xlabel('h water (m)')
+        ax2.set_ylabel('amplitude I(ppt)')
+        ax2.set_xlabel('h water (m)')
+        ax.legend()
+        ax2.legend()
+        pl.tight_layout()
+        
+        
+        color_cycle = pl.rcParams['axes.prop_cycle'].by_key()['color']
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs): 
+            ax.plot(d.Q_Rx1,d.Q_modeled,'x',color=color_cycle[i],label=f'i={i:d}')
+            ax2.plot(d.I_Rx1,d.I_modeled,'x',color=color_cycle[i],label=f'i={i:d}')
+            xlim=np.array((0,d.Q_Rx1.max()))
+            ax.plot(xlim,xlim*QFits[i].slope+QFits[i].intercept,'--',color=color_cycle[i],)
+            xlim=np.array((0,d.I_Rx1.max()))
+            ax2.plot(xlim,xlim*IFits[i].slope+IFits[i].intercept,'--',color=color_cycle[i])
+        ax.set_ylabel('Q modeled (ppt)')
+        ax.set_xlabel('Q LEM (ppt)')
+        ax.legend()  
+        ax2.set_ylabel('I modeled (ppt)')
+        ax2.set_xlabel('I LEM (ppt')
+        ax2.legend()
+        
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+
+        ax.plot(times,slopes[:,0],'x',color=color_cycle[0],label='slope Q')
+        ax.plot(times,slopes[:,1],'x',color=color_cycle[1],label='slope I')
+        ax.plot(datamean.time,datamean.time*fitSlopeQ.slope+fitSlopeQ.intercept,'--',color=color_cycle[0])
+        ax.plot(datamean.time,datamean.time*fitSlopeI.slope+fitSlopeI.intercept,'--',color=color_cycle[1])
+        
+        ax2.plot(times,intercepts[:,0],'x',color=color_cycle[0],label='slope Q')
+        ax2.plot(times,intercepts[:,1],'x',color=color_cycle[1],label='slope I')
+        ax2.plot(datamean.time,datamean.time*fitInterceptQ.slope+fitInterceptQ.intercept,'--',color=color_cycle[0])
+        ax2.plot(datamean.time,datamean.time*fitInterceptI.slope+fitInterceptI.intercept,'--',color=color_cycle[1])
+       
+        ax.set_ylabel('slope (ppt/s)')
+        ax.set_xlabel('time (s)')
+        ax.legend()  
+        ax2.set_ylabel('Intercept (ppt)')
+        ax2.set_xlabel('time (s)')
+        ax2.legend()
+        
+        
+        fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+        for i,d in enumerate(data_climbs): 
+            ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+            ax.plot(d.time,d.Q_Rx1_corr,'x',color=color_cycle[i])
+            ax.plot(d.time,d.Q_modeled,'--k')
+            ax.set_ylabel('amplitude Q (ppt)')
+            ax.set_xlabel('time (s)')
+            ax2.plot(d.time,d.I_Rx1_corr,'x',color=color_cycle[i])
+            ax2.plot(d.time,d.I_modeled,'--k')
+            ax2.set_ylabel('amplitude I  (ppt)')
+            ax2.set_xlabel('time (s)')
+        ax.plot([],[],'x',color=color_cycle[i],label='LEM corrected')
+        ax.plot([],[],'--k',label='modeled')
+        ax2.plot([],[],'x',color=color_cycle[i],label='LEM corrected')
+        ax2.plot([],[],'--k',label='modeled')
+        ax2.legend()
+        ax.legend()
+        
+        
+    return data_climbs
+
+def Fit_climbs_nodrift(datamean,params,
+               t_str,t_stp, h_tot,w_depth=[],shallow=True,
+               w_cond=2408,d_coils=0,
                plot=True):
     """
     Fit climbs to physical model (EMagPy)
@@ -1679,7 +1903,7 @@ def Fit_climbs(datamean,params,
     shallow : TYPE, optional
         if True use 3-layers model for shallow water. The default is True.
     w_cond : TYPE, optional
-        Conductivity of wea water. The default is 2408.
+        Conductivity of sea water. The default is 2408.
     d_coils : TYPE, optional
         distance of coils. The default is 0. If 0 try to read coil distance from params. 
         If not found uses default 1.92
@@ -1804,8 +2028,6 @@ def Fit_climbs(datamean,params,
         ax2.set_xlabel('time (s)')
 
     return data_climbs
-
-
 
 def Fit_climbs_emp(datamean,params,
                    t_str,t_stp, h_tot,  plot=True,h_lim=15):
