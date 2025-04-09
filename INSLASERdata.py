@@ -2,9 +2,11 @@
 """
 Created on Tue Jan 11 12:09:02 2022
 
-Class and function used for handling data files with mixed UBX data from ublox GNSS modules and frm LDS70A Laser altimeter. 
+Class and function used for handling INS data files from LEM. 
+Datafiles contain GNSS/INS NMEA messages, LDS70A Laser altimeter messages and other data logged by teh ESP32 microprocessor. 
 
-@author: Laktop
+@author: Achille Capelli
+
 """
 
 import numpy as np

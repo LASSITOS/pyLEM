@@ -1,8 +1,21 @@
 # -*- coding: utf-8 -*-
 """
+Code for postprocessin, handling and visualizing data collected with the LEM: sea ice thickness electomagnetic sounder 
+
 Created on Wed Feb 22 12:49:19 2023
 
-@author: Laktop
+@author: Achille Capelli 
+
+
+Packages to be installed stand anconda 2024.10:
+    - cmCrameri: conda install conda-forge::cmcrameri or pip install cmcrameri
+    - hampel: pip install hampel
+    - geopy: pip install geopy
+    - cartopy: pip install cartopy
+    - gpxpy: pip install gpxpy
+
+
+
 """
 
 # %% import modules
