@@ -26,6 +26,7 @@ import matplotlib.pyplot as pl
 from matplotlib.gridspec import GridSpec
 import pandas as pd
 import glob
+import math
 
 from scipy import signal
 from scipy import optimize
@@ -1568,25 +1569,33 @@ def plot_QIandH(datamean,params,title='',log=False,xlim=[0.1,1]):
 
 def Invert_data(datamean,params,
                w_cond=2408,d_coils=0,
-               plot=True,method='L-BFGS-B'):
+               plot=True,method='L-BFGS-B',
+               d_BxCoil=0,
+               dataType='Q'):
 
     """
+    Invert LEM data. 
     
-
     Parameters
     ----------
     datamean : pandas.Dataframe
         Processed LEM data.
     params : dictonary
-        Parameters for processed LEM data.
+        Parameters of  processed LEM data.
     w_cond : TYPE, optional
-        DESCRIPTION. The default is 2408.
+        Water conductivity. The default is 2408.
     d_coils : TYPE, optional
-        DESCRIPTION. The default is 0.
+        distance of Rx coil from Tx. 
     plot : TYPE, optional
-        DESCRIPTION. The default is True.
+        Plot. The default is True.
+    d_BxCoil : float, optional
+        distance of bucking coil from Tx. The default is '0'. 
+        If 0, try to find the d_Bx in params (header file INS*.csv)     
+        If =None, solve without Bucking coil.
     method : TYPE, optional
         DESCRIPTION. The default is 'L-BFGS-B'.
+    dataType : string, list[strings], optional
+        Data to use for inversion Quadrature, Inphase or both. The default is 'Q'.
 
     Returns
     -------
@@ -1603,59 +1612,60 @@ def Invert_data(datamean,params,
             print('Using default coil distance =1.92')
             d_coils=1.92
 
-    df=pd.DataFrame( datamean['Q_Rx1_corr'].values,
-                    columns=['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq)])
-    df2=pd.DataFrame( datamean['I_Rx1_corr'].values,
-                     columns=['HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)])
-    df3=pd.DataFrame( datamean[['Q_Rx1_corr','I_Rx1_corr']].values,
-                     columns=['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq),
-                              'HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)])
+    if d_BxCoil==0:
+        try:
+            d_BxCoil=params['d_Bx']
+        except KeyError():
+            print('Using default coil distance =0.56')
+            d_BxCoil=0
+    elif d_BxCoil==None:
+            d_BxCoil=0
     
     
-     #'L-BFGS-B'  #'ROPE'
+    if isinstance(dataType,str):
+        dataType=[dataType]
     
     
-    k= Problem()
-    k2= Problem()
-    k3= Problem()
-    k.createSurvey(df,unit='ppt')
-    k2.createSurvey(df2,unit='ppt')
-    k3.createSurvey(df3,unit='ppt')
-    k.surveys[0].name='Q'
-    k2.surveys[0].name='I'
-    k3.surveys[0].name='Q+I'
+    for name in dataType:
+        print('Method: '+name)
+        
+        if name=='Q':
+            values=datamean['Q_Rx1_corr'].values
+            columns=['HCP{:0.3f}f{:0.1f}h0bx{:0.3f}_quad'.format(d_coils,freq,d_BxCoil)]
+        elif name=='I':
+            values=datamean['I_Rx1_corr'].values
+            columns=['HCP{:0.3f}f{:0.1f}h0bx{:0.3f}_inph'.format(d_coils,freq,d_BxCoil)]
+        elif name=='QI':
+            values=datamean[['Q_Rx1_corr','I_Rx1_corr']].values
+            columns=['HCP{:0.3f}f{:0.1f}h0bx{:0.3f}_quad'.format(d_coils,freq,d_BxCoil),
+                     'HCP{:0.3f}f{:0.1f}h0bx{:0.3f}_inph'.format(d_coils,freq,d_BxCoil)]
+        else:
+            print(f'Tadatype {name:s} is not accepted! accepted type: Q, I, QI')
+            continue
     
+        df=pd.DataFrame( values,columns=columns)
+        k= Problem()
+        k.createSurvey(df,unit='ppt')
+        k.surveys[0].name=name
+        
+        df=pd.DataFrame( values,columns=columns)
+        
+        k.setInit(depths0=[5], fixedDepths=[False],
+                  conds0=[0,w_cond], fixedConds=[True, False]) # set initial values
     
-    k.setInit(depths0=[5], fixedDepths=[False],
-              conds0=[0,w_cond], fixedConds=[True, False]) # set initial values
-    k2.setInit(depths0=[5], fixedDepths=[False],
-              conds0=[0,w_cond], fixedConds=[True, False]) # set initial values
-    k3.setInit(depths0=[5], fixedDepths=[False],
-              conds0=[0,w_cond], fixedConds=[True, False]) # set initial values
+        k.invert(forwardModel=name, method=method, regularization='l2', alpha=0.00,beta=0,
+                 bnds=[(0.1,60),(w_cond-20,w_cond+20)], rep=500, njobs=-1,relativeMisfit=True)
+        
     
-    k.invert(forwardModel='Q', method=method, regularization='l2', alpha=0.00,beta=0,
-             bnds=[(0.1,60),(w_cond-20,w_cond+20)], rep=500, njobs=-1,relativeMisfit=True)# figure
-    k2.invert(forwardModel='I', method=method, regularization='l2', alpha=0.00,beta=0,
-             bnds=[(0.1,60),(w_cond-20,w_cond+20)], rep=500, njobs=-1,relativeMisfit=True)# figure
-    k3.invert(forwardModel='QP', method=method, regularization='l2', alpha=0.00,beta=0,
-             bnds=[(0.1,60),(w_cond-20,w_cond+20)], rep=500, njobs=-1,relativeMisfit=True)# figure
-    
-    
-    
-    datamean['hw_invQ']=k.depths[0]
-    datamean['hw_invI']=k2.depths[0]
-    datamean['hw_invQI']=k3.depths[0]
-    
-    
-    datamean['h_totQ']=datamean['hw_invQ']-datamean.h_Laser
-    datamean['h_totI']=datamean['hw_invI']-datamean.h_Laser
-    datamean['h_totQI']=datamean['hw_invQI']-datamean.h_Laser
+        datamean[f'hw_inv{name:s}']=k.depths[0]
+        datamean[f'h_tot{name:s}']=datamean[f'hw_inv{name:s}']-datamean.h_Laser
+
 
 
 
 def Fit_climbs(datamean,params,
                t_str,t_stp, h_tot,w_depth=[],shallow=True,
-               w_cond=2408,d_coils=0,
+               w_cond=2408,d_coils=0,d_BxCoil=0,
                plot=True, nodrift=False):
     """
     Fit climbs to physical model (EMagPy)
@@ -1683,12 +1693,18 @@ def Fit_climbs(datamean,params,
     d_coils : TYPE, optional
         distance of coils. The default is 0. If 0 try to read coil distance from params. 
         If not found uses default 1.92
+    d_BxCoil : float, optional
+            distance of bucking coil from Tx. The default is '0'. 
+            If =0, try to find the d_Bx in params (header file INS*.csv). 
+            If =None, solve fro no Bucking coil.
     plot : TYPE, optional
         Plot figures?. The default is True.
+    nodrift : TYPE, optional
+        DESCRIPTION. The default is False.
 
     Returns
     -------
-    None.
+    dataclimbs : pandas Dataframe with data of climbs sections
 
     """
     
@@ -1719,6 +1735,15 @@ def Fit_climbs(datamean,params,
         except KeyError():
             d_coils=1.92
             
+    if d_BxCoil==0:
+            try:
+                d_BxCoil=params['d_Bx']
+            except KeyError():
+                print('Using default coil distance =0.56')
+                d_BxCoil=0
+    elif d_BxCoil==None:
+                d_BxCoil=0
+    
     
     
     # get data climbs
@@ -1747,15 +1772,16 @@ def Fit_climbs(datamean,params,
     for i,d_climb in enumerate(data_climbs):
         if not shallow:
             emag=EMagPy_forwardmanualdata(d_climb.h_Laser.values+np.mean(h_tot[i]),[freq],
-                                           d_coils=d_coils,plot=plot,cond=w_cond)
+                                           d_coils=d_coils,d_BxCoil=d_BxCoil,
+                                           plot=plot,cond=w_cond)
         else:
             emag=EMagPy_forwardmanualdata_shallow(d_climb['w_depth_ref'],d_climb['h_tot_ref'],
                                                    [freq],
-                                                   d_coils=d_coils,
+                                                   d_coils=d_coils,d_BxCoil=d_BxCoil,
                                                    plot=plot,cond=[w_cond,0])
 
-        d_climb['Q_modeled']=emag['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq)].values
-        d_climb['I_modeled']=emag['HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)].values
+        d_climb['Q_modeled']=emag['HCP{:0.3f}f{:0.1f}h0bx{:0.3f}_quad'.format(d_coils,freq,d_BxCoil)].values
+        d_climb['I_modeled']=emag['HCP{:0.3f}f{:0.1f}h0bx{:0.3f}_inph'.format(d_coils,freq,d_BxCoil)].values
         
         
         fitQ=linregress(d_climb.Q_Rx1,d_climb.Q_modeled)
@@ -2029,7 +2055,250 @@ def Fit_climbs_nodrift(datamean,params,
 
     return data_climbs
 
+
+
+
+
+
+
+
 def Fit_climbs_emp(datamean,params,
+               t_str,t_stp, h_tot,h_lim=15,
+               plot=True, nodrift=False):
+    """
+    Fit climbs to physical model (EMagPy)
+    
+    
+    Parameters
+    ----------
+    datamean : pandas.Dataframe
+        Processed LEM data.
+    params : dictonary
+        Parameters for processed LEM data.
+    t_str : list,array
+        start times for climbs (up or down)
+    t_stp : list,array
+        stop times for climbs (up or down)
+    h_tot : list,array
+        total thickness (ice+snow) at climbs location
+    h_lim : Float, optional
+            Maximum distance to water to be used for fit. The default is 15 m.
+
+    plot : TYPE, optional
+        Plot figures?. The default is True.
+    nodrift : TYPE, optional
+        DESCRIPTION. The default is False.
+
+    Returns
+    -------
+    dataclimbs : pandas Dataframe with data of climbs sections
+
+    """
+    
+    
+
+    
+    
+    if len(t_str)!=len(t_stp) or len(t_str)!=len(h_tot):
+        print('t_str,t_stp, h_tot needs to have same length. Stopping fit of climbs !!!')
+        return None
+    
+    # if (not shallow and len(w_depth)==0):
+    #     print(' No wather depth provided. Unable to use shallow water model! Using infinite water depth !!!')
+    
+    
+    if nodrift:  # use old version of function ignoring drift and fitting multiple climbs together!
+       returnFit_climbs_emp_nodrift(datamean,params,
+                          t_str,t_stp, h_tot,  plot=True,h_lim=h_lim)
+
+    freq=params['f']
+    
+    
+    # get data climbs
+    lims=[]    
+    for i,[st,stp] in enumerate(zip(t_str,t_stp)):
+        lims_i=[np.searchsorted(datamean.time.values,st),np.searchsorted(datamean.time.values,stp)]
+        lims.append(lims_i)
+    lims2=np.array([datamean.index[np.array(lims)[:,0]],datamean.index[np.array(lims)[:,1]]]).transpose()
+    
+    data_climbs=[]
+    for i in range(0,len(t_stp)):
+        data_climbs.append(datamean.iloc[lims[i][0]:lims[i][1]].copy())
+        
+    # add data ice from drillholes
+    for i,l in enumerate(lims2):
+        data_climbs[i]['h_water_ref']=data_climbs[i].h_Laser.values
+        data_climbs[i].loc[lims2[i,0]:lims2[i,1],'h_water_ref']+=h_tot[i]
+    
+    # model climbs data
+    # fit data
+    def log_func(Q, a, b,c):
+        return c*np.log((Q-a))+b
+    
+    p0_Q=[-0.1,-1,-2]
+    p0_I=[-0.1,0,-4]
+    
+    QFits=[]
+    IFits=[]
+    for i,d_climb in enumerate(data_climbs):
+        
+        d=d_climb.query(f'h_water_ref < {h_lim:.2f}')[['Q_Rx1','I_Rx1','h_water_ref']]
+        
+        # ind=~np.isnan(np.log(d.Q_Rx1).values)
+        # popt, pcov =optimize.curve_fit(log_func, d.Q_Rx1[ind], d['h_water_ref'][ind],p0=p0_Q)
+        try: 
+            popt, pcov =optimize.curve_fit(log_func, d.Q_Rx1, d['h_water_ref'],p0=p0_Q)
+        except RuntimeError:
+            popt=[0,0,0]
+            
+        QFits.append(popt)
+        d_climb['h_water_empQ']=log_func(d_climb.Q_Rx1, popt[0],popt[1],popt[2]) 
+        
+        # ind=~np.isnan(np.log(d.I_Rx1).values)
+        # popt, pcov = optimize.curve_fit(log_func, d.I_Rx1[ind], d['h_water_ref'][ind],p0=p0_I)
+        try:
+            popt, pcov = optimize.curve_fit(log_func, d.I_Rx1, d['h_water_ref'],p0=p0_I)
+        except RuntimeError:
+            popt=[0,0,0]
+        IFits.append(popt)
+        d_climb['h_water_empI']=log_func(d_climb.I_Rx1, popt[0],popt[1],popt[2]) 
+    
+    
+    # Interpolate fits (linear) to get rid of drifts 
+    QFits=np.array(QFits)
+    IFits=np.array(IFits)
+    lim_corr=[]
+    times=[]
+    for i,l in enumerate(lims2):
+        lim_corr.append(int(np.mean(l)))
+        times.append(datamean.time[lim_corr[i]])
+    
+    fitA_Q=linregress(times,QFits[:,0])
+    fitB_Q=linregress(times,QFits[:,1])
+    fitC_Q=linregress(times,QFits[:,2])
+    fitA_I=linregress(times,IFits[:,0])
+    fitB_I=linregress(times,IFits[:,1])
+    fitC_I=linregress(times,IFits[:,2])
+    
+    # correct data with fotted parameters
+    a=fitA_Q.slope*datamean.time+fitA_Q.intercept
+    b=fitB_Q.slope*datamean.time+fitB_Q.intercept
+    c=fitC_Q.slope*datamean.time+fitC_Q.intercept
+    
+    datamean['h_water_empQ']=log_func(datamean.Q_Rx1, a,b,c) 
+    
+    a=fitA_I.slope*datamean.time+fitA_I.intercept
+    b=fitB_I.slope*datamean.time+fitB_I.intercept
+    c=fitC_I.slope*datamean.time+fitC_I.intercept
+    
+    datamean['h_water_empI']=log_func(datamean.I_Rx1, a,b,c)
+
+    datamean['h_tot_empQ']=datamean.h_water_empQ-datamean.h_Laser
+    datamean['h_tot_empI']=datamean.h_water_empI-datamean.h_Laser
+
+
+    # add fit values to parameters
+    params['fitQ_climbs_emp']=QFits
+    params['fitI_climbs_emp']=IFits
+    
+    params['fitA_Q']=fitA_Q
+    params['fitB_Q']=fitB_Q 
+    params['fitC_Q']=fitC_Q
+    params['fitA_I']=fitA_I
+    params['fitB_I']=fitB_I
+    params['fitC_I']=fitC_I
+    
+    
+    if plot:
+        
+        color_cycle = pl.rcParams['axes.prop_cycle'].by_key()['color']
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs): 
+            ax.plot(d.h_water_ref,d.Q_Rx1,'x',color=color_cycle[i],label=f'i={i:d}')
+            ax2.plot(d.h_water_ref,d.I_Rx1,'x',color=color_cycle[i],label=f'i={i:d}')
+         
+            ax.plot(d.h_water_ref,QFits[i,0]+np.exp((d.h_water_ref-QFits[i,1])/QFits[i,2]),'--',color=color_cycle[i])
+            ax2.plot(d.h_water_ref,IFits[i,0]+np.exp((d.h_water_ref-IFits[i,1])/IFits[i,2]),'--',color=color_cycle[i])
+        ax.plot([h_lim,h_lim],ax.get_ylim(),'--k',label='h_lim')   
+        ax2.plot([h_lim,h_lim],ax2.get_ylim(),'--k',label='h_lim')
+        ax.set_ylabel('Q (ppt)')
+        ax.set_xlabel('h water (m)')
+        ax.legend()  
+        ax2.set_ylabel('I (ppt)')
+        ax2.set_xlabel('h water (m)')
+        ax.legend()
+        ax2.legend()
+        pl.tight_layout()
+         
+
+
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs): 
+            ax.plot(d.h_water_ref,d.Q_Rx1,'x',color=color_cycle[i],label=f'i={i:d}')
+            ax2.plot(d.h_water_ref,d.I_Rx1,'x',color=color_cycle[i],label=f'i={i:d}')
+         
+            ax.plot(d.h_water_ref,QFits[i,0]+np.exp((d.h_water_ref-QFits[i,1])/QFits[i,2]),'--',color=color_cycle[i])
+            ax2.plot(d.h_water_ref,IFits[i,0]+np.exp((d.h_water_ref-IFits[i,1])/IFits[i,2]),'--',color=color_cycle[i])
+        ax.plot([h_lim,h_lim],ax.get_ylim(),'--k',label='h_lim')   
+        ax2.plot([h_lim,h_lim],ax2.get_ylim(),'--k',label='h_lim')   
+        ax.set_ylabel('Q (ppt)')
+        ax.set_xlabel('h water (m)')
+        ax2.set_ylabel('I (ppt)')
+        ax2.set_xlabel('h water (m)')
+        ax.set_yscale('log')
+        ax2.set_yscale('log')
+        ax.legend()
+        ax2.legend()
+        pl.tight_layout()
+            
+        
+        fig,ax=pl.subplots(1,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+        for i,d in enumerate(data_climbs): 
+            ax.plot(d.h_water_ref,d.h_water_empQ,'x',label=f'h_Q i={i:d}')
+            ax.plot(d.h_water_ref,d.h_water_empI,'x',label=f'h_I i={i:d}')  
+        ax.plot([0,30],[0,30],':k')
+        ax.plot([0,h_lim,h_lim],[h_lim,h_lim,0],'--k',label='h_lim') 
+        ax.set_ylabel('h_water LEM emp  (m)')
+        ax.set_xlabel('h_water Laser (m)')
+        ax.legend()
+        pl.tight_layout()
+        
+        
+        fig,[ax,ax2]=pl.subplots(2,1)
+        ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
+
+        ax.plot(times,QFits[:,0],'x',color=color_cycle[0],label='a Q')
+        ax.plot(times,QFits[:,1],'x',color=color_cycle[1],label='b Q')
+        ax.plot(times,QFits[:,2],'x',color=color_cycle[2],label='c Q')
+        ax.plot(datamean.time,datamean.time*fitA_Q.slope+fitA_Q.intercept,'--',color=color_cycle[0])
+        ax.plot(datamean.time,datamean.time*fitB_Q.slope+fitB_Q.intercept,'--',color=color_cycle[1])
+        ax.plot(datamean.time,datamean.time*fitC_Q.slope+fitC_Q.intercept,'--',color=color_cycle[2])
+        
+        ax2.plot(times,IFits[:,0],'x',color=color_cycle[0],label='a I')
+        ax2.plot(times,IFits[:,1],'x',color=color_cycle[1],label='b I')
+        ax2.plot(times,IFits[:,2],'x',color=color_cycle[2],label='c I')
+        ax2.plot(datamean.time,datamean.time*fitA_I.slope+fitA_I.intercept,'--',color=color_cycle[0])
+        ax2.plot(datamean.time,datamean.time*fitB_I.slope+fitB_I.intercept,'--',color=color_cycle[1])
+        ax2.plot(datamean.time,datamean.time*fitC_I.slope+fitC_I.intercept,'--',color=color_cycle[2])
+       
+        ax.set_ylabel('slope (ppt/s)')
+        ax.set_xlabel('time (s)')
+        ax.legend()  
+        ax2.set_ylabel('Intercept (ppt)')
+        ax2.set_xlabel('time (s)')
+        ax2.legend()
+        
+        
+
+        
+        
+    return data_climbs
+
+def Fit_climbs_emp_nodrift(datamean,params,
                    t_str,t_stp, h_tot,  plot=True,h_lim=15):
     """
     Fit climbs to emphirical model
@@ -2058,7 +2327,7 @@ def Fit_climbs_emp(datamean,params,
     """
     
     if len(t_str)!=len(t_stp) or len(t_str)!=len(h_tot) :
-        print('t_str,t_stp, h_tot,w_depth needs to have same length. Stopping fit of climbs !!!')
+        print('t_str,t_stp, h_tot, needs to have same length. Stopping fit of climbs !!!')
         return None
     
     
@@ -2078,25 +2347,25 @@ def Fit_climbs_emp(datamean,params,
         data_climbs=pd.concat([data_climbs,datamean.iloc[lims[i][0]:lims[i][1]].copy()])
         
     # add data ice from drillholes
-    data_climbs['h_tot_ref']=data_climbs.h_Laser.values
+    data_climbs.loc[:,'h_water_ref']=data_climbs.h_Laser.values
     
     for i,l in enumerate(lims2):
-        data_climbs.loc[lims2[i,0]:lims2[i,1],'h_tot_ref']+=h_tot[i]
+        data_climbs.loc[lims2[i,0]:lims2[i,1],'h_water_ref']+=h_tot[i]
     
     
     # fit data
     def func(x, a, b,c):
         return a*np.log(x+b)+c
 
-    # fitQ=optimize.curve_fit(func,  data_climbs.Q_Rx1, data_climbs['h_tot_ref'],[-3.5,0,-3.2])
-    # fitI=optimize.curve_fit(func,  data_climbs.Q_Rx1, data_climbs['h_tot_ref'],[1e3,-0.01,-250])
+    # fitQ=optimize.curve_fit(func,  data_climbs.Q_Rx1, data_climbs['h_water_ref'],[-3.5,0,-3.2])
+    # fitI=optimize.curve_fit(func,  data_climbs.Q_Rx1, data_climbs['h_water_ref'],[1e3,-0.01,-250])
     
-    d=data_climbs.query(f'h_tot_ref < {h_lim:.2f}')[['Q_Rx1','I_Rx1','h_tot_ref']]
+    d=data_climbs.query(f'h_water_ref < {h_lim:.2f}')[['Q_Rx1','I_Rx1','h_water_ref']]
     
     ind=~np.isnan(np.log(d.Q_Rx1).values)
-    fitQ=linregress(np.log(d.Q_Rx1)[ind],d['h_tot_ref'][ind])
+    fitQ=linregress(np.log(d.Q_Rx1)[ind],d['h_water_ref'][ind])
     ind=~np.isnan(np.log(d.I_Rx1).values)
-    fitI=linregress(np.log(d.I_Rx1)[ind],d['h_tot_ref'][ind])
+    fitI=linregress(np.log(d.I_Rx1)[ind],d['h_water_ref'][ind])
     
     
     params['fitQ_climbs_emp']=fitQ
@@ -2121,11 +2390,11 @@ def Fit_climbs_emp(datamean,params,
         fig,[ax,ax2]=pl.subplots(2,1)
         ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
         for i,d in enumerate(data_climbs2): 
-            ax.plot(d.h_tot_ref,np.log(d.Q_Rx1),'--',label=f'i={i:d}')
-            ax2.plot(d.h_tot_ref,np.log(d.I_Rx1),'--') 
+            ax.plot(d.h_water_ref,np.log(d.Q_Rx1),'--',label=f'i={i:d}')
+            ax2.plot(d.h_water_ref,np.log(d.I_Rx1),'--') 
         
-        ax.plot(d.h_tot_ref,(d.h_tot_ref-fitQ.intercept)/fitQ.slope,':k',label='fit')
-        ax2.plot(d.h_tot_ref,(d.h_tot_ref-fitI.intercept)/fitI.slope,':k') 
+        ax.plot(d.h_water_ref,(d.h_water_ref-fitQ.intercept)/fitQ.slope,':k',label='fit')
+        ax2.plot(d.h_water_ref,(d.h_water_ref-fitI.intercept)/fitI.slope,':k') 
         
         ax.set_ylabel('log( Q) (-)')
         ax.set_xlabel('h water (m)')
@@ -2138,7 +2407,7 @@ def Fit_climbs_emp(datamean,params,
     
         fig,[ax,ax2]=pl.subplots(2,1)
         ax.set_title('f={:.2f} kHz, name:{:s}'.format(freq,params['name']))
-        for i,d in enumerate(data_climbs2): 
+        for i,d in enumerate(data_climbs): 
             ax.plot(d.h_tot_ref,d.Q_Rx1,'--',label=f'i={i:d}')
             ax2.plot(d.h_tot_ref,d.I_Rx1,'--') 
         ax.plot(d.h_tot_ref,np.exp((d.h_tot_ref-fitQ.intercept)/fitQ.slope),':k',label='fit')
@@ -2320,7 +2589,7 @@ def Fit_climbs_emp_corr(datamean,params,
 
 
 
-def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
+def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,d_BxCoil=0,plot=True,cond=2400):
 
     # parameters for the synthetic model
     nlayer = 2 # number of layers
@@ -2333,9 +2602,9 @@ def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
     conds = np.zeros((npos, nlayer))
     conds[:,1]= cond 
     
-    
+
     # defines coils configuration, frequency
-    coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
+    coils = ['HCP{:0.3f}f{:0.1f}h0bx{:0.3f}'.format(d_coils,f,d_BxCoil) for f in freqs] 
     
     # foward modelling
     k = Problem()
@@ -2349,7 +2618,7 @@ def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,plot=True,cond=2400):
     return k.surveys[0].df
 
 
-def EMagPy_forwardmanualdata_shallow(water_depth,h_water,freqs,d_coils=1.929,plot=True,cond=[0,2400]):
+def EMagPy_forwardmanualdata_shallow(water_depth,h_water,freqs,d_coils=1.929,d_BxCoil=0,plot=True,cond=[0,2400]):
 
     # parameters for the synthetic model
     nlayer = 3 # number of layers
@@ -2364,7 +2633,7 @@ def EMagPy_forwardmanualdata_shallow(water_depth,h_water,freqs,d_coils=1.929,plo
     
     
     # defines coils configuration, frequency
-    coils = ['HCP{:0.3f}f{:0.1f}h0'.format(d_coils,f) for f in freqs] 
+    coils = ['HCP{:0.3f}f{:0.1f}h0bx{:0.3f}'.format(d_coils,f,d_BxCoil) for f in freqs] 
     
     # foward modelling
     k = Problem()
@@ -2445,26 +2714,55 @@ def interpolData_d(data,datamean,proplist):
 
 #%% Code for plotting on map
 
-def plot_xy(datamean,attr,origin=0,colorlim=[]):
+def plot_xy(datamean,attr,origin=0,colorlim=[],z_label='',ax=0,cmap=cm.batlow):
+    """
+    plot data from datamean as colormap with coordinate x,y relative to point origin
+
+    Parameters
+    ----------
+    datamean : Dataframe
+        LEM data.
+    attr : string
+        attribute to plot e.g:'h_totQ' .
+    origin : TYPE, optional
+        origing of x,y coordinates in latlon. If 0, use fist point as origin. The default is 0.
+    colorlim : TYPE, optional
+        limits of color bar. The default is [].
+    z_label : TYPE, optional
+        label of z-axis if ='' then use attr. The default is ''.
+    ax : axis, optional
+        axis to plot map, if=0 create new figure. Default=0 
+
+    Returns
+    -------
+    fig : TYPE
+        figure.
+
+    """
     
     x,y=get_XY(datamean,origin=origin)
     
+    if len(z_label)==0:
+        z_label=attr
     
+    if ax==0:
+        fig,ax=pl.subplots(1,1)
+    else:
+        fig=ax.get_figure()
     
-    fig,ax=pl.subplots(1,1)
     
     if len(colorlim)>0:
-        im=ax.scatter(x,y,c=datamean[attr],cmap=cm.batlow,marker='x',vmin=colorlim[0],vmax=colorlim[1])
+        im=ax.scatter(x,y,c=datamean[attr],cmap=cmap,marker='x',vmin=colorlim[0],vmax=colorlim[1])
     else:
-        im=ax.scatter(x,y,c=datamean[attr],cmap=cm.batlow,marker='x')
-    c=pl.colorbar(im, label=attr)
+        im=ax.scatter(x,y,c=datamean[attr],cmap=cmap,marker='x')
+    c=pl.colorbar(im, label=z_label)
     ax.set_ylabel('y (m)')
     ax.set_xlabel('x (m)')
     pl.tight_layout()
 
     return fig
 
-def get_XY(datamean,origin=0):  
+def get_XY(datamean,origin=0,Params=0,addXY=True):  
     """
     Transform lat,lon to local coordinates around origin point
 
@@ -2500,7 +2798,17 @@ def get_XY(datamean,origin=0):
     
     y=d*np.cos(bearing/360*2*np.pi)
     x=d*np.sin(bearing/360*2*np.pi)
+    
+    if addXY:
+        datamean.loc[:,'x']=x
+        datamean.loc[:,'y']=y
+    
+    if type(Params)==dict:
+        Params['loc0']=origin
+    
     return x,y
+
+
 
 def get_bearing(start, end):
     # if (type(start) != tuple) or (type(end) != tuple):
@@ -2524,6 +2832,34 @@ def get_bearing(start, end):
     compass_bearing = (initial_bearing + 360) % 360
 
     return compass_bearing
+
+
+### Code for local coordinates: (Chat GPT)
+# from pyproj import Transformer
+
+# # Define the origin (local reference point)
+# origin_lat = 37.7749   # Example: San Francisco
+# origin_lon = -122.4194
+# origin_alt = 0         # Optional: elevation in meters
+
+# # Point to transform
+# point_lat = 37.7750
+# point_lon = -122.4195
+# point_alt = 0
+
+# # Create a transformer from geodetic (lat/lon) to ENU using the origin as reference
+# transformer = Transformer.from_crs(
+#     crs_from="epsg:4979",  # WGS84 with ellipsoidal height
+#     crs_to=f"+proj=enu +lat_0={origin_lat} +lon_0={origin_lon} +h_0={origin_alt} +x_0=0 +y_0=0 +z_0=0 +ellps=WGS84",
+#     always_xy=True
+# )
+
+# # Transform to local ENU coordinates
+# x_east, y_north, z_up = transformer.transform(point_lon, point_lat, point_alt)
+
+# print(f"ENU Coordinates: East={x_east:.3f} m, North={y_north:.3f} m, Up={z_up:.3f} m")
+
+
 
 #%%  Sync INS/Laser and ADC
 

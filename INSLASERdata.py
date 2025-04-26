@@ -217,6 +217,9 @@ class INSLASERdata:
                 setattr(self.Temp,f'T{j:d}',self.Temp.T[i])
                 setattr(self.Temp,f't{j:d}',self.Temp.TOW[i]-self.TOW0)
         
+        # redistribute TOW for laser eliminating zero intervals
+        self.redistributeLaserTOW()
+        
         # correct h with angles from INS
         if correct_Laser:
                 self.corr_h_laser()
@@ -226,7 +229,41 @@ class INSLASERdata:
             self.PGPSP.fix=(np.array(self.PGPSP.status,dtype=int) & 0x000001F00 )>>8
         except AttributeError:
             None
+    
+    
+    #------------------------------------------
+    ########## Functions definitions ##########
+    #------------------------------------------
             
+    def redistributeLaserTOW(self):
+        dt=np.diff(self.Laser.TOW)
+            
+        m_dt=np.median(dt)
+        
+        for i in range(len(dt)):
+            if dt[i]<m_dt*0.5:  # find small intervals
+                try:
+                    if dt[i+1]>m_dt*1.1:  # move 
+                        Delta=(dt[i]+dt[i+1])/2
+                        dt[i+1]=Delta
+                        dt[i]=Delta
+                        self.Laser.TOW[i+1] =self.Laser.TOW[i]+Delta   
+                    
+                    elif dt[i-1]>m_dt*1.1:
+                        Delta=(dt[i]+dt[i-1])/2
+                        dt[i]=Delta
+                        dt[i-1]=Delta
+                        self.Laser.TOW[i] =self.Laser.TOW[i]-Delta
+                    
+                    elif dt[i-1]>m_dt*0.1 and dt[i+1]>m_dt*0.1:
+                        Delta=(dt[i]+dt[i-1]+dt[i+1])/3
+                        dt[i]=Delta
+                        dt[i-1]=Delta
+                        dt[i+1]=Delta
+                        self.Laser.TOW[i] =self.Laser.TOW[i]-Delta/2
+                        self.Laser.TOW[i+1] =self.Laser.TOW[i+1]+Delta/2  
+                except IndexError:
+                    continue
             
     def corr_h_laser(self):
         """
@@ -753,8 +790,260 @@ def gps_datetime(time_week, time_s, leap_seconds=18):
     return gps_epoch + timedelta(weeks=time_week, 
                                  seconds=time_s-leap_seconds)
 
-# %% plot functions
+
+#%%  Sync Laser and GPX data from UAV
+
+def GPXToPandas(gpx_path):
+    with open(gpx_path) as f:
+        gpx = gpxpy.parse(f)
     
+    # Convert to a dataframe one point at a time.
+    points = []
+    for segment in gpx.tracks[0].segments:
+        for p in segment.points:
+            points.append({
+                'time': p.time,
+                'lat': p.latitude,
+                'lon': p.longitude,
+                'elevation': p.elevation,
+            })
+    df=pd.DataFrame.from_records(points)
+    df.time=df.time.dt.tz_convert('UTC')
+    
+    # interpolate times if overlapping
+    for i in df.index[1:-1]:
+        if df.time[i]-df.time[i-1]==timedelta(seconds=0):
+            df.loc[i,'time']=df.time[i]+(df.time[i+1]-df.time[i])/2
+    
+    return df
+
+
+def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0,dT=0):
+        """
+        Find values of t1 in t2 and return the corresponding values x. For missing data different strategies can be chosen.
+
+        Input:
+        ------
+
+        t1:         time serie 1
+        x:          values corresponding to time series 1
+        t2:         time serie 2
+        method:     Method to use for missing data.
+                        exact:          Keep just
+                        linInterpol:    linear interploation between two values, if time interval < maxDelta [s]
+                        nearest:        get nearest value. If time lag is > maxDelta return NAN.
+                        nearest_2:        Fill up all values of x in x2 in the position t2 corresponding to t1. (loop trough t1). If time lag is > maxDelta return NAN. Nearest value is returned.
+
+        maxDelta:   maximum time difference in [s] of interpolation or nearest
+        dT:         Time shift to align timeseries
+
+
+        Output:
+        -------
+        x(t1==t2):    time array in datetime format and data array.
+
+
+        """
+        t2=np.array(t2)
+        t1=np.array(t1)
+        x=np.array(x)
+        
+        # check
+        if len(t1)!=len(x):
+                raise ValueError('t1 and x have not the same length!')
+
+
+        x2=np.zeros([len(t2),1])
+        # x2=np.zeros([len(t2),1],dtype=x.dtype)
+
+
+        # add DeltaT
+        try: #try to use datetime format
+            t1=t1+pd.Timedelta( seconds=dT)
+        except:
+            t1+=dT
+
+        if method=='exact':
+                # return    np.where(t1[t1.searchsorted(t2)]==t2,x,np.nan)
+
+
+                for i,a in enumerate(t2):
+                        j=np.searchsorted(t1,a)
+
+                        if a>t1[-1] or a<t1[0]:
+                                x2[i]=np.nan
+                        elif t1[j]==a:
+
+                                x2[i]=x[j]
+                        else:
+                                x2[i]=np.nan
+                return x2
+
+
+        elif method=='linInterpol':
+                for i,a in enumerate(t2):
+
+                        j=np.searchsorted(t1,a)
+
+                        if a>t1[-1] or a<t1[0]:
+                                x2[i]=np.nan
+                        elif t1[j]==a:
+
+                                x2[i]=x[j]
+                        else:
+
+                                try: #try to use datetime format
+                                        d=(t1[j]-t1[j-1]).total_seconds()
+                                        d2=(a-t1[j-1]).total_seconds()
+                                except:
+                                        d=(t1[j]-t1[j-1])
+                                        d2=(a-t1[j-1])
+
+                                if d>maxDelta:
+                                        x2[i]=np.nan
+
+                                else:
+                                        x2[i]=x[j-1]+d2/d*(x[j]-x[j-1])
+
+                return x2
+
+
+        elif method=='nearest':
+                try: #try to used datetime
+                        (t1[0]-t2[0])<timedelta(seconds=maxDelta)
+                        delta=timedelta(seconds=maxDelta)
+                except TypeError:
+                       delta =maxDelta
+
+
+                for i,a in enumerate(t2):
+
+                        j=np.searchsorted(t1,a)
+
+                        if j==len(t1): # j exeeding index max
+                                j-=1
+
+
+                        if a>=t1[j]:
+                                d=a-t1[j]
+
+                                if j<len(t1)-1:
+                                        d2=t1[j+1]-a
+
+                                        if d>delta and d2>delta:
+                                                x2[i]=np.nan
+                                        elif d>d2:
+                                                x2[i]=x[j+1]
+                                        else:
+                                                x2[i]=x[j]
+
+                                else:
+                                        if d>delta :
+                                                x2[i]=np.nan
+                                        else:
+                                                x2[i]=x[j]
+
+
+                        else:
+                                d=t1[j]-a
+
+                                if j>0:
+                                        d2=a-t1[j-1]
+
+                                        if d>delta and d2>delta:
+                                                x2[i]=np.nan
+                                        elif d>d2:
+                                                x2[i]=x[j-1]
+                                        else:
+                                                x2[i]=x[j]
+
+                                else:
+                                        if d>delta :
+                                                x2[i]=np.nan
+                                        else:
+                                                x2[i]=x[j]
+
+                return x2
+
+
+        elif method=='nearest_2':
+                try: #try to used datetime
+                        (t1[0]-t2[0])<timedelta(seconds=maxDelta)
+                        delta=[timedelta(seconds=maxDelta) for i in range(len(x2)) ]
+
+                except TypeError:
+                       delta = np.ones([len(x2),1])*maxDelta
+
+                x2*=np.nan
+
+                for i,a in enumerate(t1):
+
+                        j=np.searchsorted(t2,a)
+
+
+                        if j==len(t2): # j exeeding index max
+                                d2=a-t2[j-1]
+                                if d2<delta[j-1]:
+                                        delta[j-1]=d2
+                                        x2[j-1]=x[i]
+
+                        elif j==0:
+                                d=t2[j]-a
+                                if d<delta[j]:
+
+                                        delta[j]=d
+                                        x2[j]=x[i]
+
+                        else:
+                                d=t2[j]-a
+                                d2=a-t2[j-1]
+
+                                if d>d2:
+                                        if d2<delta[j-1]:
+                                                delta[j-1]=d2
+                                                x2[j-1]=x[i]
+                                else:
+                                        if d<delta[j]:
+                                                delta[j]=d
+                                                x2[j]=x[i]
+
+
+
+                return x2
+
+        else:
+                raise ValueError('Unnown method! ')
+
+
+
+# %% plot functions
+   
+
+def plot_Temp_Voltage(data,title=''):
+   
+    fig,ax=pl.subplots(1,1,sharex=True)
+    for j in range(1,4):
+        try:
+            ax.plot(getattr(data.Temp,f't{j:d}'),getattr(data.Temp,f'T{j:d}'),label=f'T{j:d}')
+        except AttributeError:
+            None
+    ax.plot(data.Laser.TOW-data.TOW0,data.Laser.T,label='Laser')
+    ax.legend(loc=2)
+    ax.set_ylabel('Temperature (C)')
+    ax.set_xlabel('Time (s)')
+    ax2=pl.twinx(ax)
+    ax2.plot(data.VBat.TOW-data.TOW0,data.VBat.V,'k',label='V Bat')
+    ax2.legend(loc=1)
+    ax2.set_ylabel('Voltage(V)')
+    
+    
+    if title!='none':
+        ax.set_title(title)
+        
+    return fig
+
+    
+
 def plot_GPSquality(data,title=''):
         
     fig,[ax,ax2,ax3]=pl.subplots(3,1,sharex=True)
@@ -1160,237 +1449,6 @@ def laser_correction_superimposed(data,GPS_h=False):
     ax3.set_ylabel('Angle (rad)')
     ax2.grid()
     return fig
-
-
-
-
-
-
-
-
-#%%  Sync Laser and GPX data from UAV
-
-def GPXToPandas(gpx_path):
-    with open(gpx_path) as f:
-        gpx = gpxpy.parse(f)
-    
-    # Convert to a dataframe one point at a time.
-    points = []
-    for segment in gpx.tracks[0].segments:
-        for p in segment.points:
-            points.append({
-                'time': p.time,
-                'lat': p.latitude,
-                'lon': p.longitude,
-                'elevation': p.elevation,
-            })
-    df=pd.DataFrame.from_records(points)
-    df.time=df.time.dt.tz_convert('UTC')
-    
-    # interpolate times if overlapping
-    for i in df.index[1:-1]:
-        if df.time[i]-df.time[i-1]==timedelta(seconds=0):
-            df.loc[i,'time']=df.time[i]+(df.time[i+1]-df.time[i])/2
-    
-    return df
-
-
-def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0,dT=0):
-        """
-        Find values of t1 in t2 and return the corresponding values x. For missing data different strategies can be chosen.
-
-        Input:
-        ------
-
-        t1:         time serie 1
-        x:          values corresponding to time series 1
-        t2:         time serie 2
-        method:     Method to use for missing data.
-                        exact:          Keep just
-                        linInterpol:    linear interploation between two values, if time interval < maxDelta [s]
-                        nearest:        get nearest value. If time lag is > maxDelta return NAN.
-                        nearest_2:        Fill up all values of x in x2 in the position t2 corresponding to t1. (loop trough t1). If time lag is > maxDelta return NAN. Nearest value is returned.
-
-        maxDelta:   maximum time difference in [s] of interpolation or nearest
-        dT:         Time shift to align timeseries
-
-
-        Output:
-        -------
-        x(t1==t2):    time array in datetime format and data array.
-
-
-        """
-        t2=np.array(t2)
-        t1=np.array(t1)
-        x=np.array(x)
-        
-        # check
-        if len(t1)!=len(x):
-                raise ValueError('t1 and x have not the same length!')
-
-
-        x2=np.zeros([len(t2),1])
-        # x2=np.zeros([len(t2),1],dtype=x.dtype)
-
-
-        # add DeltaT
-        try: #try to use datetime format
-            t1=t1+pd.Timedelta( seconds=dT)
-        except:
-            t1+=dT
-
-        if method=='exact':
-                # return    np.where(t1[t1.searchsorted(t2)]==t2,x,np.nan)
-
-
-                for i,a in enumerate(t2):
-                        j=np.searchsorted(t1,a)
-
-                        if a>t1[-1] or a<t1[0]:
-                                x2[i]=np.nan
-                        elif t1[j]==a:
-
-                                x2[i]=x[j]
-                        else:
-                                x2[i]=np.nan
-                return x2
-
-
-        elif method=='linInterpol':
-                for i,a in enumerate(t2):
-
-                        j=np.searchsorted(t1,a)
-
-                        if a>t1[-1] or a<t1[0]:
-                                x2[i]=np.nan
-                        elif t1[j]==a:
-
-                                x2[i]=x[j]
-                        else:
-
-                                try: #try to use datetime format
-                                        d=(t1[j]-t1[j-1]).total_seconds()
-                                        d2=(a-t1[j-1]).total_seconds()
-                                except:
-                                        d=(t1[j]-t1[j-1])
-                                        d2=(a-t1[j-1])
-
-                                if d>maxDelta:
-                                        x2[i]=np.nan
-
-                                else:
-                                        x2[i]=x[j-1]+d2/d*(x[j]-x[j-1])
-
-                return x2
-
-
-        elif method=='nearest':
-                try: #try to used datetime
-                        (t1[0]-t2[0])<timedelta(seconds=maxDelta)
-                        delta=timedelta(seconds=maxDelta)
-                except TypeError:
-                       delta =maxDelta
-
-
-                for i,a in enumerate(t2):
-
-                        j=np.searchsorted(t1,a)
-
-                        if j==len(t1): # j exeeding index max
-                                j-=1
-
-
-                        if a>=t1[j]:
-                                d=a-t1[j]
-
-                                if j<len(t1)-1:
-                                        d2=t1[j+1]-a
-
-                                        if d>delta and d2>delta:
-                                                x2[i]=np.nan
-                                        elif d>d2:
-                                                x2[i]=x[j+1]
-                                        else:
-                                                x2[i]=x[j]
-
-                                else:
-                                        if d>delta :
-                                                x2[i]=np.nan
-                                        else:
-                                                x2[i]=x[j]
-
-
-                        else:
-                                d=t1[j]-a
-
-                                if j>0:
-                                        d2=a-t1[j-1]
-
-                                        if d>delta and d2>delta:
-                                                x2[i]=np.nan
-                                        elif d>d2:
-                                                x2[i]=x[j-1]
-                                        else:
-                                                x2[i]=x[j]
-
-                                else:
-                                        if d>delta :
-                                                x2[i]=np.nan
-                                        else:
-                                                x2[i]=x[j]
-
-                return x2
-
-
-        elif method=='nearest_2':
-                try: #try to used datetime
-                        (t1[0]-t2[0])<timedelta(seconds=maxDelta)
-                        delta=[timedelta(seconds=maxDelta) for i in range(len(x2)) ]
-
-                except TypeError:
-                       delta = np.ones([len(x2),1])*maxDelta
-
-                x2*=np.nan
-
-                for i,a in enumerate(t1):
-
-                        j=np.searchsorted(t2,a)
-
-
-                        if j==len(t2): # j exeeding index max
-                                d2=a-t2[j-1]
-                                if d2<delta[j-1]:
-                                        delta[j-1]=d2
-                                        x2[j-1]=x[i]
-
-                        elif j==0:
-                                d=t2[j]-a
-                                if d<delta[j]:
-
-                                        delta[j]=d
-                                        x2[j]=x[i]
-
-                        else:
-                                d=t2[j]-a
-                                d2=a-t2[j-1]
-
-                                if d>d2:
-                                        if d2<delta[j-1]:
-                                                delta[j-1]=d2
-                                                x2[j-1]=x[i]
-                                else:
-                                        if d<delta[j]:
-                                                delta[j]=d
-                                                x2[j]=x[i]
-
-
-
-                return x2
-
-        else:
-                raise ValueError('Unnown method! ')
-
 
 
 
