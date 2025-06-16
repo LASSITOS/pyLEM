@@ -117,8 +117,8 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         DESCRIPTION. The default is 2.
     dT_start : TYPE, optional
         DESCRIPTION. The default is 0.
-    T_max : TYPE, optional
-        DESCRIPTION. The default is 0.
+    T_max : scalar, optional
+        Time limit up to which data are loaded. To be used for loading only portion of large file. The default is 0.
     **kwargs : TYPE
         DESCRIPTION.
 
@@ -551,8 +551,10 @@ def save_LEM_csv(datamean,params,columns=[],fileOutput=''):
         for i,ch in enumerate(params['Rx_ch']):
             columns.extend([f'I_Rx{i+1:d}',f'Q_Rx{i+1:d}',f'A_Rx{i+1:d}',f'phase_Rx{i+1:d}'])
             
-        
-        columns.extend(['h_water_empQ', 'h_water_empI', 'h_tot_empQ', 'h_tot_empI'])
+        if hasattr(datamean,'h_tot_empQ'):
+            columns.extend(['h_water_empQ',  'h_tot_empQ'])
+        if hasattr(datamean,'h_tot_empI'):
+            columns.extend(['h_water_empI',  'h_tot_empI'])
             
             
     # remove columns to save that are not in datamean
@@ -1595,7 +1597,7 @@ def Invert_data(datamean,params,
     method : TYPE, optional
         DESCRIPTION. The default is 'L-BFGS-B'.
     dataType : string, list[strings], optional
-        Data to use for inversion Quadrature, Inphase or both. The default is 'Q'.
+        Data to use for inversion Quadrature, Inphase or both. The default is 'Q'. Accepted: ['Q','I','QI']
 
     Returns
     -------
@@ -1700,7 +1702,7 @@ def Fit_climbs(datamean,params,
     plot : TYPE, optional
         Plot figures?. The default is True.
     nodrift : TYPE, optional
-        DESCRIPTION. The default is False.
+        If nodrift use old version and do not fit drift along transect. The default is False.
 
     Returns
     -------
@@ -1802,7 +1804,7 @@ def Fit_climbs(datamean,params,
     for i,l in enumerate(lims2):
         slopes[i,:]=[QFits[i].slope,IFits[i].slope]
         intercepts[i,:]=[QFits[i].intercept,IFits[i].intercept]
-        lim_corr.append(int(np.mean(l)))
+        lim_corr.append(datamean.index[datamean.index.searchsorted(np.mean(l))])
         times.append(datamean.time[lim_corr[i]])
     
     fitSlopeQ=linregress(times,slopes[:,0])
@@ -1869,8 +1871,8 @@ def Fit_climbs(datamean,params,
         ax.plot(datamean.time,datamean.time*fitSlopeQ.slope+fitSlopeQ.intercept,'--',color=color_cycle[0])
         ax.plot(datamean.time,datamean.time*fitSlopeI.slope+fitSlopeI.intercept,'--',color=color_cycle[1])
         
-        ax2.plot(times,intercepts[:,0],'x',color=color_cycle[0],label='slope Q')
-        ax2.plot(times,intercepts[:,1],'x',color=color_cycle[1],label='slope I')
+        ax2.plot(times,intercepts[:,0],'x',color=color_cycle[0],label='intercept Q')
+        ax2.plot(times,intercepts[:,1],'x',color=color_cycle[1],label='intercept I')
         ax2.plot(datamean.time,datamean.time*fitInterceptQ.slope+fitInterceptQ.intercept,'--',color=color_cycle[0])
         ax2.plot(datamean.time,datamean.time*fitInterceptI.slope+fitInterceptI.intercept,'--',color=color_cycle[1])
        
@@ -1987,8 +1989,8 @@ def Fit_climbs_nodrift(datamean,params,
                                                d_coils=d_coils,
                                                plot=plot,cond=[w_cond,0])
 
-    data_climbs['Q_modeled']=emag['HCP{:0.3f}f{:0.1f}h0_quad'.format(d_coils,freq)].values
-    data_climbs['I_modeled']=emag['HCP{:0.3f}f{:0.1f}h0_inph'.format(d_coils,freq)].values
+    data_climbs['Q_modeled']=emag['HCP{:0.3f}f{:0.1f}h0bx0.000_quad'.format(d_coils,freq)].values
+    data_climbs['I_modeled']=emag['HCP{:0.3f}f{:0.1f}h0bx0.000_inph'.format(d_coils,freq)].values
     
     
     fitQ=linregress(data_climbs.Q_Rx1,data_climbs.Q_modeled)
@@ -2609,7 +2611,7 @@ def EMagPy_forwardmanualdata(h_water,freqs,d_coils=1.929,d_BxCoil=0,plot=True,co
     # foward modelling
     k = Problem()
     k.setModels([depths], [conds])
-    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
+    _ = k.forward(forwardModel='QI', coils=coils, noise=0.0)
     
     if plot:
         k.showResults() # display original model
@@ -2638,7 +2640,7 @@ def EMagPy_forwardmanualdata_shallow(water_depth,h_water,freqs,d_coils=1.929,d_B
     # foward modelling
     k = Problem()
     k.setModels([depths], [conds])
-    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
+    _ = k.forward(forwardModel='QI', coils=coils, noise=0.0)
     
     if plot:
         k.showResults() # display original model
@@ -2665,7 +2667,7 @@ def EMagPy_forwardmanualdata_old(depths,freqs,d_coils=1.929,plot=True):
     
     k = Problem()
     k.setModels([depths], [conds])
-    _ = k.forward(forwardModel='QP', coils=coils, noise=0.0)
+    _ = k.forward(forwardModel='QI', coils=coils, noise=0.0)
     
     if plot:
         k.showResults() # display original model
@@ -2912,11 +2914,83 @@ def interpolData(data,datamean,proplist):
 gps_datetime_np=np.vectorize(gps_datetime, doc='Vectorized `gps_datetime`')
 
 
+#%% Functions for getting freeboard
+
+def getFreeboard(datamean,t_Freeboard,cal_freeboard,UAV=False,plot=True,tetherLength=10,dataINS=None):
+    
+    if UAV:
+        
+        # Get freeboard
+        datamean['freeboard']=datamean.UAVGPS_height-datamean.h_Laser
+        datamean.freeboard-=datamean.query('time>{:f} and time<{:f} '.format(t_Freeboard[0],t_Freeboard[1])).freeboard.mean()-cal_freeboard
+        datamean['freeboard_GPSLEM']=datamean.h_GPS-datamean.h_Laser
+        datamean['freeboard_GPSLEM']-=datamean.query('time>{:f} and time<{:f} '.format(t_Freeboard[0],t_Freeboard[1])).freeboard_GPSLEM.mean()-cal_freeboard
+        
+        if plot:
+            fig=pl.figure(figsize=(8,10))
+            ax=fig.add_subplot(3, 1, 1)
+            ax2=fig.add_subplot(3, 1, 2,sharex = ax)
+            ax3=fig.add_subplot(3, 1, 3,sharex = ax)
+            
+            ax.plot(datamean.time,datamean.h_GPS,label='INS_LEM')
+            ax.plot(datamean.time,datamean.h_Laser,label='Laser')
+            ax.plot(datamean.time,datamean.UAVGPS_height-tetherLength,label='GPS_UAV-10m')
+            try:
+                ax.plot(dataINS.PGPSP.time,dataINS.PGPSP.elevation_HAE,'x',label='GPS_LEM')
+            except Exception as e:
+                print(e)
+                None
+            ax.set_xlabel('date')
+            ax.set_ylabel('h (m)')
+            ax.legend()
+            
+            ax2.plot(datamean.time,datamean.h_GPS-datamean.h_Laser,label='Laser-INS_LEM')
+            ax2.plot(datamean.time,datamean.UAVGPS_height-tetherLength-datamean.h_Laser,label='Laser-GPS_UAV')
+            try:
+                indices=np.searchsorted(dataINS.Laser.TOW,dataINS.PGPSP.TOW/1000)
+                ax2.plot(dataINS.PGPSP.time,dataINS.PGPSP.elevation_HAE -dataINS.Laser.h_corr[indices],'x',label='Laser-GPS_LEM')
+            except Exception as e:
+                print(e)
+                None
+                
+            
+            ax2.set_xlabel('date')
+            ax2.set_ylabel('$\Delta$h (m)')
+            ax2.legend()
+            
+            ax3.plot(datamean.time,datamean['freeboard_GPSLEM'],label='INS_LEM')
+            ax3.plot(datamean.time,datamean.freeboard,label='GPS_UAV')
+            ax3.set_xlabel('date')
+            ax3.set_ylabel('Freeboard (m)')
+            ax3.legend()
+    
+    else:    
+        # Get freeboard
+        datamean['freeboard']=datamean.h_GPS-datamean.h_Laser
+        datamean['freeboard']-=datamean.query('time>{:f} and time<{:f} '.format(t_Freeboard[0],t_Freeboard[1])).freeboard.mean()-cal_freeboard
+        
+        if plot:
+            fig=pl.figure(figsize=(8,10))
+            ax=fig.add_subplot(2, 1, 1)
+            ax3=fig.add_subplot(2, 1, 2,sharex = ax)
+            
+            ax.plot(datamean.time,datamean.h_GPS,label='GPS_LEM')
+            ax.plot(datamean.time,datamean.h_Laser,label='Laser')
+            ax.set_xlabel('date')
+            ax.set_ylabel('h (m)')
+            ax.legend()
+            
+            ax3.plot(datamean.time,datamean['freeboard_GPSLEM'],label='GPS_LEM')
+            ax3.plot(datamean.time,datamean.freeboard,label='GPS_UAV')
+            ax3.set_xlabel('date')
+            ax3.set_ylabel('Freeboard (m)')
+            ax3.legend()
+
+
 
 #%% Functions for integrating external GPS data from UAV (.pos data)
 
-
-def addGPSdata(path, fileGPS,datamean,dataINS):
+def addGPSdata(path, fileGPS,datamean,dataINS,tetherLength=10,plot=True):
     """
     Add data form external GPS in .pos format to datamean. 
 
@@ -2946,6 +3020,31 @@ def addGPSdata(path, fileGPS,datamean,dataINS):
          leapS=18
 
     interpolData_GPS(dataGPS,datamean,leap_seconds=leapS)
+    
+    if plot:
+        fig=pl.figure(figsize=(8,5))
+        ax=fig.add_subplot(1, 1, 1)
+        ax2=ax.twinx()
+        
+        ax.plot(datamean.time,datamean.h_GPS,label='h LEM_INS')
+        ax.plot(datamean.time,datamean.UAVGPS_height-tetherLength,label=f'h GPS_UAV-{tetherLength:.1F}m')
+        ax.plot([],[],'-k',label='$\Delta$h (GPS_UAV-LEM_INS')
+        
+        setattr(dataINS.PGPSP,'time',dataINS.PGPSP.TOW/1000-(datamean.TOW-datamean.time).iloc[0])
+        ax.plot(dataINS.PGPSP.time,dataINS.PGPSP.elevation_HAE,'x',label='h LEM_GPS')
+        
+        ax.set_xlabel('Time')
+        ax.set_ylabel('h (m)')
+        ax.legend()
+        ax.set_title('GNSS position IMX vs. UAV')
+        ax2.plot(datamean.time,datamean.UAVGPS_height-tetherLength-datamean.h_GPS,'-k',label='GPS_UAV-GPS_LEM')
+        ax2.set_xlabel('date')
+        ax2.set_ylabel('$\Delta$h (m)')
+        
+        plot_GPSquality(dataINS,title='')
+                
+
+
 
     return dataGPS
 

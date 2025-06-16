@@ -226,7 +226,18 @@ class INSLASERdata:
         
         # parse PGPSP status
         try:
+            # fix status
             self.PGPSP.fix=(np.array(self.PGPSP.status,dtype=int) & 0x000001F00 )>>8
+            
+            # satellite number
+            self.PGPSP.NSat=(np.array(self.PGPSP.status,dtype=int) & 0x000000FF )
+            
+            # GPS status flags
+            self.PGPSP.flags=(np.array(self.PGPSP.status,dtype=int) & 0xFFFFE000 )>>16
+            
+            # Base status flags
+            self.PGPSP.Baseflags=(np.array(self.PGPSP.status,dtype=int) & 0x03000000)>>(6*4)
+            
         except AttributeError:
             None
     
@@ -1046,17 +1057,27 @@ def plot_Temp_Voltage(data,title=''):
 
 def plot_GPSquality(data,title=''):
         
-    fig,[ax,ax2,ax3]=pl.subplots(3,1,sharex=True)
-    ax.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.fix)
+    fig,[ax,ax2,ax3,ax4,ax5]=pl.subplots(5,1,sharex=True,figsize=(15,8))
+    ax.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.fix,label='GPS fix')
+    ax.plot([],[],'k',label='base flag')
     ax.set_ylabel('GPS fix')
-    ax2.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.hAcc,label='horizontal')
-    ax2.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.vAcc,label='vertical')
+    ax.set_yticks([0,1,2,3,4,5,8,8,10,11,12],['None','DeadRek','2D','3D','GPS+DR','time','DGPS','SBAS','single','Float','FIX'])
+    ax1b=ax.twinx()
+    ax1b.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.Baseflags,'k',label='base flag')
+    ax1b.set_ylabel('BaseFlags')
+    ax1b.set_yticks([0,1,2,3],['0','missing','moving','invalid'])    
+    ax.legend()
+    ax2.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.hAcc,label='horizontal')
+    ax2.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.vAcc,label='vertical')
     ax2.legend()
     ax2.set_ylabel('accuracy (m)')
-    ax3.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.cnoMean)
-    ax3.set_ylabel('meanCarrierToNoise ratio')
-    ax3.set_xlabel('Time (s)')
-
+    ax3.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.cnoMean)
+    ax3.set_ylabel('mean CNo ratio')
+    ax4.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.NSat)
+    ax4.set_ylabel('N. Sat.')
+    ax5.plot(data.PINS1.TOW-data.TOW0,data.PINS1.elevation)
+    ax5.set_ylabel('Height (m)')
+    ax5.set_xlabel('Time (s)')
     if title!='none':
         ax.set_title(title)
         
