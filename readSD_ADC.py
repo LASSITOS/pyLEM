@@ -6,7 +6,7 @@ def main(path='./',list=False,listonly=0,file='',driveNum=1):  # Read the first 
     """
     Optional 
     path:       path where files are saved
-    listonly:   LIST FILES BUT DON'T DOWNLOAD THEM
+    list/listonly:   LIST FILES BUT DON'T DOWNLOAD THEM
     file:       file to be downloaded, if empty download all files
     driveNum:   number of drive. Default is 1, but it is 0 on field laptop
     E.g:  
@@ -59,14 +59,21 @@ def read_sector(disk, sector_no=0,path='./',listonly=0,fDownload=''):
         fileNames = []
         startAddress = []
         fileSizes = []
-
+        
+        filenumber=0
         for file in range(SD_FilePtr):      # go throuth each file
             
-            
+            filenumber+=1
             read = fp.read(12)      # read file name
-            fName = read.decode()
-            fileNames.append(fName.rstrip('\x00'))
-
+            try:
+                fName = read.decode()
+                fileNames.append(fName.rstrip('\x00'))
+            except UnicodeDecodeError:
+                fName="nameEr{:06}".format(filenumber)
+                fileNames.append(fName)
+                print("Can't decode file name! Substituting with: {:s}".format(fName))
+                print("original name:  ")
+                print(read)
             read = fp.read(4)
             sAddress = int.from_bytes(read, 'little')
             startAddress.append(sAddress)
