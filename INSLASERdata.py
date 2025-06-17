@@ -1047,13 +1047,13 @@ def plot_Temp_Voltage(data,title=''):
 def plot_GPSquality(data,title=''):
         
     fig,[ax,ax2,ax3]=pl.subplots(3,1,sharex=True)
-    ax.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.fix)
+    ax.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.fix)
     ax.set_ylabel('GPS fix')
-    ax2.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.hAcc,label='horizontal')
-    ax2.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.vAcc,label='vertical')
+    ax2.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.hAcc,label='horizontal')
+    ax2.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.vAcc,label='vertical')
     ax2.legend()
     ax2.set_ylabel('accuracy (m)')
-    ax3.plot(data.PGPSP.TOW-data.TOW0,data.PGPSP.cnoMean)
+    ax3.plot(data.PGPSP.TOW/1000-data.TOW0,data.PGPSP.cnoMean)
     ax3.set_ylabel('meanCarrierToNoise ratio')
     ax3.set_xlabel('Time (s)')
 
