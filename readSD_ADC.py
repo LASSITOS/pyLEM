@@ -2,12 +2,13 @@ import os
 import csv
 import sys
 
-def main(path='./',list=False,listonly=0,file=''):  # Read the first sector of the first disk as example.
+def main(path='./',list=False,listonly=0,file='',driveNum=1):  # Read the first sector of the first disk as example.
     """
     Optional 
     path:       path where files are saved
     listonly:   LIST FILES BUT DON'T DOWNLOAD THEM
     file:       file to be downloaded, if empty download all files
+    driveNum:   number of drive. Default is 1, but it is 0 on field laptop
     E.g:  
     """
     if list:
@@ -15,7 +16,7 @@ def main(path='./',list=False,listonly=0,file=''):  # Read the first sector of t
     
     if os.name == "nt":
         # Windows based OS normally uses '\\.\physicaldriveX' for disk drive identification.
-        read_sector(r"\\.\physicaldrive1",0,path=path,listonly=listonly,fDownload=file)
+        read_sector(r"\\.\physicaldrive"+str(driveNum),0,path=path,listonly=listonly,fDownload=file)
         print('done')
     else:
         # Linux based OS normally uses '/dev/diskX' for disk drive identification.
@@ -33,14 +34,14 @@ def read_sector(disk, sector_no=0,path='./',listonly=0,fDownload=''):
     # File operations with `with` syntax. To reduce file handeling efforts.
     with open(disk, 'r+b') as fp:
         # fp.seek(0)
-        # for n in range(10):
-        #     print(fp.read(1))
+        # for n in range(100):
+            # print(fp.read(1))
 
         fp.seek(sector_no * 512)
         read = fp.read(4)       # read the signature
         SD_Sig = read.hex()        # 
-        print(SD_Sig)
-        #print('SD signature : '+ str(SD_Sig))
+        #print(SD_Sig)
+        print('SD signature : '+ str(SD_Sig))
 
         read = fp.read(1)       # read file pointer
         SD_FilePtr = int.from_bytes(read, 'little')
