@@ -821,161 +821,6 @@ def filter_median(data,column,window_size=10):
 
 # %% load raw data and Lock-In filter
 
-# def LockInADCrawfile(path,name, Tx_ch='ch2', Rx_ch=['ch1'],
-#                      plot=False,
-#                      window=1920,freq=1063.3985,phase0=0,SPS=19200,flowpass=50,i_cal=[],
-#                      **kwargs):
-#     '''
-
-#     Parameters
-#     ----------
-#     path : TYPE
-#         DESCRIPTION.
-#     name : TYPE
-#         DESCRIPTION.
-#     Tx_ch : TYPE, optional
-#         DESCRIPTION. The default is 'ch3'.
-#     Rx_ch : TYPE, optional
-#         DESCRIPTION. The default is ['ch1','ch2'].
-#     plot : TYPE, optional
-#         DESCRIPTION. The default is False.
-#     window : TYPE, optional
-#         DESCRIPTION. The default is 1920.
-#     freq : TYPE, optional
-#         DESCRIPTION. The default is 1063.3985.
-#     phase0 : TYPE, optional
-#         DESCRIPTION. The default is 0.
-#     SPS : TYPE, optional
-#         DESCRIPTION. The default is 19200.
-#     flowpass : TYPE, optional
-#         DESCRIPTION. The default is 50.
-#     i_cal : TYPE, optional
-#         DESCRIPTION. The default is [].
-#     **kwargs : TYPE
-#         DESCRIPTION.
-
-#     Returns
-#     -------
-#     datamean : TYPE
-#         DESCRIPTION.
-
-#     '''
-    
-#     file=path+r'\\'+name+r'.csv'
-#     savefile=path+'\\'+name+r'LockIn.csv'
-#     version='v1.0'
-    
-    
-#     print('Reading file: ',file)
-#     datamean, i_missing, gap,f,phase0=loadADCraw_singleFreq(file,
-#                                                    f=freq,phase0=phase0,SPS=SPS,
-#                                                    flowpass=flowpass,window=window,keep_HF_data=False,
-#                                                    i_Tx=int(Tx_ch[2:]),
-#                                                    **kwargs)    
-    
-#     print(f'Freq: {f:.2f} Hz')
-#     print(f'Phase: {phase0:.2f} rad')
-    
-#     tx=int(Tx_ch[2:])
-#     columns=[]
-    
-#     # normalize Rx by Tx
-#     for i,ch in enumerate(Rx_ch):
-#         rx=int(ch[2:])
-#         j=i+1
-#         datamean[f'A_Rx{j:d}']=datamean[f'A{rx:d}']/datamean[f'A{tx:d}']
-#         datamean[f'phase_Rx{j:d}']=datamean[f'phase{rx:d}']-datamean[f'phase{tx:d}']   
-#         columns.append(f'A_Rx{j:d}')
-#         columns.append(f'phase_Rx{j:d}')
-
-
-#     A0,phase0=Calibrate(datamean,Rx_ch,i_cal)
- 
-    
-#     # write file header
-#     file=open(savefile,'w')
-    
-#     file.write("# Signal extracted with LockIn form raw data\n")
-#     file.write("# Processing date: {:} \tScript verion: {:s}  \n\n".format( datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),version))
-#     file.write("# Freqeuncy LockIn: {:} Hz\n".format(freq))
-#     file.write("# Phase LockIn: {:}\n".format(phase0))
-#     file.write("# SPS: {:}\n\n".format(SPS))
-#     file.write("# Frequency low pass: {:}\n".format(flowpass))
-#     file.write("# Averaging window size: {:}\n".format(window))
-#     file.write("# TxChannel: {:}\n".format(Tx_ch))
-#     file.write("# Rx channels: {:}\n".format(str(Rx_ch)))
-#     if i_cal!=[]:
-#         file.write("# Index calibration: [{:},{:}]\n".format(str(i_cal[0]),str(i_cal[1])))
-#         for i,ch in enumerate(Rx_ch):
-#             file.write("# A0_Rx{:d}= {:f}, phase0_Rx{:d}= {:f},\n".format(i+1,A0[i],i+1,phase0[i]))
-#     else:
-#         file.write("# No calibration")
-        
-#     file.write("#\n")
-#     file.write("# Missing index: {:}, Gap sizes: {:}\n".format(str( i_missing), str( gap)))
-#     file.write("##\n")
-#     file.close()
-    
-#     # columns to save
-#     columns+=[ 'Q1', 'I1', 'Q2', 'I2', 'Q3', 'I3','A1', 'phase1','A2', 'phase2', 'A3', 'phase3' ] #'t', 'TOW', 'lat', 'lon', 'h_GPS',  'h_Laser', 'roll', 'pitch','heading', 'velX', 'velY', 'velZ',  'signQ', 'TempLaser',
-    
-#     #save to file
-#     try:
-#         datamean.to_csv(savefile,mode='a',index=True,header=True,columns=columns)
-#     except Exception as e: 
-#             print("error. Can't save data ")
-#             print(e)
-#             print('Columns to write:', columns)
-#             print('Columns to in datamean:', datamean.keys())
-    
-#     if plot:
-#         for i,ch in enumerate(Rx_ch):
-#             rx=int(ch[2:])
-#             j=i+1
-#             pl.figure()
-#             pl.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}'],'x',label='Q Rx')
-#             pl.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}'],'x',label='I Rx')
-#             pl.ylabel('amplitude (-)')
-#             pl.xlabel('time (s)')
-#             pl.legend()
-#             pl.title(ch)
-        
-#             pl.figure()
-#             pl.plot(datamean.index/SPS,datamean[f'A{rx:d}'],'x', label='Amplitude Rx signal')
-#             pl.plot(datamean.index/SPS,datamean[f'Q{rx:d}'],'x', label='Quadr Rx')
-#             pl.plot(datamean.index/SPS,datamean[f'I{rx:d}'],'x', label='Inph Rx')
-#             pl.ylabel('amplitude (-)')
-#             pl.xlabel('time (s)')
-#             pl.legend()
-#             pl.title(ch)
-
-#         pl.figure()
-#         pl.plot(datamean.index/SPS,datamean[f'A{tx:d}'],'x', label='Amplitude Tx')
-#         pl.plot(datamean.index/SPS,datamean[f'Q{tx:d}'],'x', label='Quadr Tx')
-#         pl.plot(datamean.index/SPS,datamean[f'I{tx:d}'],'x', label='Inph Tx')
-#         pl.ylabel('amplitude (-)')
-#         pl.xlabel('time (s)')
-#         pl.legend()
-#         pl.title(Tx_ch)
-        
-        
-#         pl.figure()
-#         ax=pl.subplot(211)
-#         ax2=pl.subplot(212)
-#         for i,ch in enumerate(Rx_ch):
-#             rx=int(ch[2:])
-#             j=i+1
-#             ax.plot(datamean.index/SPS,datamean[f'Q_Rx{j:d}'],'x',label=ch)
-#             ax2.plot(datamean.index/SPS,datamean[f'I_Rx{j:d}'],'x',label=ch)
-#         ax.set_ylabel('Quadrature (-)')
-#         ax.set_xlabel('time (s)')
-#         ax2.set_ylabel('InPhase (-)')
-#         ax2.set_xlabel('time (s)')
-#         ax.legend()
-#         ax2.legend()
-    
-#     return datamean
-
 def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
                           flowpass=50,chunksize=19200,keep_HF_data=False,
                           findFreq=True,i_Tx=3,i_blok=[],plot=True,T_max=0,
@@ -3483,7 +3328,7 @@ def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1'],n_freqs=
 
 def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.36,11.18,11.44])*1e-3,Ac= 0.04**2*np.pi,Nc= 320.0,dR= 1.92 ,dB= 0.56 ,dC=1.92-0.225):    
     """   
-    Calculate the theoretical magnitude of the normalized secondary effect generated by calibration coil. See notes for formulas and derivation.
+    Calculate the theoretical magnitude of the normalized secondary field generated by calibration coil. See notes for formulas and derivation.
     
     Parameters
     ----------
@@ -3520,7 +3365,7 @@ def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.
 
     def funCRL(R,L,omega):
         """
-        Compute theoretical I,Q therm depending on calibration coil for given R,L of calibration coil and omega 
+        Compute theoretical I,Q therms depending on calibration coil for given R,L of calibration coil and omega 
         """
         denom=R**2+(omega*L)**2
         I=omega**2*L/denom
@@ -3534,6 +3379,7 @@ def refCalibration(f,Rs=np.array([79.95,427.7,623,288.3]),Ls=np.array([11.48,11.
     magZ=np.sqrt(ZI**2+ZQ**2)
     Z=ZI+1j*ZQ
     return Z,ZI,ZQ,magZ
+
     
 def  fitCalibrationParams(calQ,calI,f,plot=False,CalParams={}):
     """
