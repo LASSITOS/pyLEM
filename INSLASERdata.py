@@ -281,11 +281,16 @@ class INSLASERdata:
         correct elevation with angles from INS
         """   
         try:
+            
+            # intrpolate data form GPS
             i=self.PINS1.TOW.searchsorted( self.Laser.TOW)
             j=np.array(i)-1
             
             pitch=self.PINS1.pitch[j]+(self.PINS1.pitch[i]-self.PINS1.pitch[j])/(self.PINS1.TOW[i]-self.PINS1.TOW[j])*(self.Laser.TOW-self.PINS1.TOW[j])
             roll=self.PINS1.roll[j]+(self.PINS1.roll[i]-self.PINS1.roll[j])/(self.PINS1.TOW[i]-self.PINS1.TOW[j])*(self.Laser.TOW-self.PINS1.TOW[j])
+            self.Laser.lat=self.PINS1.lat[j]+(self.PINS1.lat[i]-self.PINS1.lat[j])/(self.PINS1.TOW[i]-self.PINS1.TOW[j])*(self.Laser.TOW-self.PINS1.TOW[j])
+            self.Laser.lon=self.PINS1.lon[j]+(self.PINS1.lon[i]-self.PINS1.lon[j])/(self.PINS1.TOW[i]-self.PINS1.TOW[j])*(self.Laser.TOW-self.PINS1.TOW[j])
+            
             
             roll-=self.roll0
             pitch-=self.pitch0
