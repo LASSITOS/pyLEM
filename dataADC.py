@@ -36,6 +36,8 @@ from zoneinfo import ZoneInfo
 from scipy.optimize import curve_fit,least_squares
 from scipy.stats import linregress
 
+from pyproj import Transformer
+
 # non anaconda libraries
 try:
     from hampel import hampel   # pip install hampel
@@ -67,6 +69,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                      window=1920,freq=0,phase0=0,SPS=19200,flowpass=30,
                      autoCal=True,i_autoCal=0,i_cal=[],
                      INSkargs={},MultiFreq=False,n_freqs=3,iStart=2,dT_start=0,T_max=0,
+                     LockInType='digital',
                      **kwargs):
     """
     
@@ -119,6 +122,8 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
         DESCRIPTION. The default is 0.
     T_max : scalar, optional
         Time limit up to which data are loaded. To be used for loading only portion of large file. The default is 0.
+    LockInType: STRING, optional 
+        Use 'digital' lockin or 'analog' (correlation with Tx signal), The default is 'digital'
     **kwargs : TYPE
         DESCRIPTION.
 
@@ -219,7 +224,7 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
                                                                f=freq,phase0=phase0,SPS=SPS,
                                                                flowpass=flowpass,window=window,keep_HF_data=False,
                                                                i_Tx=int(Tx_ch[2:]),plot=plot,
-                                                               T_max=T_max,
+                                                               T_max=T_max,LockInType=LockInType,
                                                                **kwargs)    
 
         # params={}
@@ -824,6 +829,7 @@ def filter_median(data,column,window_size=10):
 def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
                           flowpass=50,chunksize=19200,keep_HF_data=False,
                           findFreq=True,i_Tx=3,i_blok=[],plot=True,T_max=0,
+                          LockInType='digital',
                           **kwargs):
     """
     Read raw data file in blocks and extract signal over LockIn with lowpass filter. Single frequency. 
@@ -852,6 +858,8 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
         DESCRIPTION. The default is [].
     T_max : TYPE, optional
         Data after T_mas (s) are not loaded. The default is []
+    LockInType: STRING, optional 
+        Use 'digital' lockin or 'analog' (correlation with Tx signal), The default is 'digital'
     **kwargs : TYPE
         DESCRIPTION.
 
@@ -887,11 +895,7 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
     
     f0=f
     if findFreq:   # upload a chunk of data and determine the frequency
-        
-    
 
-        
-        
         threshold=0.5
         win_f0=100
         dt_min=0.2
@@ -972,6 +976,13 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
     i=0
     
     
+    if LockInType=='digital':
+        print('Using digital lockIn')
+    elif LockInType=='analog':
+        print('Using analog lockIn with Tx channel: ch{:d}'.format(i_Tx))   
+    print(LockInType) 
+        
+        
     for chunk in df:
         i+=1
         j,g=find_missing(chunk,pr=False)
@@ -990,23 +1001,50 @@ def loadADCraw_singleFreq(file,window=1920,f=0,phase0=0,SPS=19200,
            raise
             
         
+        
+        
         # LockIn + filter
-        try:
-            ia= chunk2.index[0]
-            ib= chunk2.index[-1]+1
-        except IndexError:
-            print('Error. Chunck number: {:d}, Index A: {:d}  Index B: {:d} '.format(i,chunk.index[0],chunk.index[-1]))
-            raise 
+        
+        if LockInType=='digital':
+            # print('Using digital lockIn')
+            try:
+                ia= chunk2.index[0]
+                ib= chunk2.index[-1]+1
+            except IndexError:
+                print('Error. Chunck number: {:d}, Index A: {:d}  Index B: {:d} '.format(i,chunk.index[0],chunk.index[-1]))
+                raise 
+                
+            s=np.sin(2*np.pi*f*np.arange(ia,ib)/SPS+phase0)
+            c=np.cos(2*np.pi*f*np.arange(ia,ib)/SPS+phase0)
+            chunk2['Q1'],zQ1=signal.lfilter(b,a,chunk2.ch1*s,zi=zQ1)
+            chunk2['I1'],zI1=signal.lfilter(b,a,chunk2.ch1*c,zi=zI1)
+            chunk2['Q2'],zQ2=signal.lfilter(b,a,chunk2.ch2*s,zi=zQ2)
+            chunk2['I2'],zI2=signal.lfilter(b,a,chunk2.ch2*c,zi=zI2)
+            chunk2['Q3'],zQ3=signal.lfilter(b,a,chunk2.ch3*s,zi=zQ3)
+            chunk2['I3'],zI3=signal.lfilter(b,a,chunk2.ch3*c,zi=zI3)
+        
+        
+        elif LockInType=='analog':
             
-        s=np.sin(2*np.pi*f*np.arange(ia,ib)/SPS+phase0)
-        c=np.cos(2*np.pi*f*np.arange(ia,ib)/SPS+phase0)
-        chunk2['Q1'],zQ1=signal.lfilter(b,a,chunk2.ch1*s,zi=zQ1)
-        chunk2['I1'],zI1=signal.lfilter(b,a,chunk2.ch1*c,zi=zI1)
-        chunk2['Q2'],zQ2=signal.lfilter(b,a,chunk2.ch2*s,zi=zQ2)
-        chunk2['I2'],zI2=signal.lfilter(b,a,chunk2.ch2*c,zi=zI2)
-        chunk2['Q3'],zQ3=signal.lfilter(b,a,chunk2.ch3*s,zi=zQ3)
-        chunk2['I3'],zI3=signal.lfilter(b,a,chunk2.ch3*c,zi=zI3)
-
+            L=len(chunk2.index)
+            
+            # print('Using analog lockIn with Tx channel: ch{:d}'.format(i_Tx))   
+            chunk2['Q1']=np.zeros(L)
+            chunk2['I1'],zI1=signal.lfilter(b,a,chunk2.ch1*getattr(chunk2,f'ch{i_Tx:d}')/np.mean(np.abs(getattr(chunk2,f'ch{i_Tx:d}')))**2,zi=zI1)
+            chunk2['Q2']=np.zeros(L)
+            chunk2['I2'],zI2=signal.lfilter(b,a,chunk2.ch2*getattr(chunk2,f'ch{i_Tx:d}')/np.mean(np.abs(getattr(chunk2,f'ch{i_Tx:d}')))**2,zi=zI2)
+            chunk2['Q3']=np.zeros(L)
+            chunk2['I3'],zI3=signal.lfilter(b,a,chunk2.ch3*getattr(chunk2,f'ch{i_Tx:d}')/np.mean(np.abs(getattr(chunk2,f'ch{i_Tx:d}')))**2,zi=zI3)
+            
+            for i in range(1,3):
+                if i ==i_Tx:
+                    chunk2[f'Q{i:d}']=np.zeros(L)
+                    chunk2[f'I{i:d}']=np.ones(L)
+            
+            
+            
+        else:
+             raise Error('Wrong LockInType! LockInType can be digital or analog') 
 
         
         #Get mean values
@@ -1408,6 +1446,44 @@ def plot_QIandH(datamean,params,title='',log=False,xlim=[0.1,1]):
     ax2.set_ylim(-0.04,1)
     pl.tight_layout()
     
+    return fig
+
+
+
+
+def plot_QIandTemp(datamean,dataINS,params,title=''):
+    
+    colors = pl.rcParams['axes.prop_cycle'].by_key()['color']
+
+    # a=datamean.index.searchsorted(3*SPS)
+    # b=datamean.index.searchsorted(1*SPS)
+
+    fig,[ax,ax2]=pl.subplots(2,1,sharex=True)
+    # ax.plot(datamean.index[a:-b]/SPS,datamean['Q_Rx1'].values[a:-b]-np.mean(datamean['Q_Rx1'].values[a:-b]),'x',label='Q Rx')
+    # ax.plot(datamean.index[a:-b]/SPS,datamean['I_Rx1'].values[a:-b]-np.mean(datamean['I_Rx1'].values[a:-b]),'x',label='I Rx')
+    ax.plot(datamean.index/SPS,datamean['Q_Rx1'].values-np.mean(datamean['Q_Rx1'].values),'x',label='Q Rx')
+    ax.plot(datamean.index/SPS,datamean['I_Rx1'].values-np.mean(datamean['I_Rx1'].values),'x',label='I Rx')
+    ax.set_xlim(3,datamean.index[-1]/SPS-2)
+    ax.plot(ax.get_xlim(),[0,0],'k--',)
+    ax.set_ylabel('amplitude (-)')
+    ax.set_xlabel('time (s)')
+    ax.legend()
+    
+    if len(title)>0:
+        ax.set_title(title)
+    else:
+        ax.set_title(f'File: {params['name']:s}, f={params['f']/1000:.1f} kHz')
+    
+    ax3=ax2.twinx()
+    ax2.plot(dataINS.Temp.TOW1-dataINS.TOW0,dataINS.Temp.T1,'-',color=colors[0],label='T1')
+    ax3.plot(dataINS.Temp.TOW2-dataINS.TOW0,dataINS.Temp.T2,'-',color=colors[1],label='T2')
+    ax2.set_xlim(3,datamean.index[-1]/SPS-2)
+    ax2.set_ylabel('T1 (deg C)')
+    ax2.set_ylabel('T2 (deg C)')
+    ax2.set_xlabel('time (s)')
+    ax2.legend(loc=2)
+    ax3.legend(loc=1)
+
     return fig
 
 #%% Code for inverting data and fit to climbs 
@@ -2609,7 +2685,7 @@ def plot_xy(datamean,attr,origin=0,colorlim=[],z_label='',ax=0,cmap=cm.batlow):
 
     return fig
 
-def get_XY(datamean,origin=0,Params=0,addXY=True):  
+def get_XY_old(datamean,origin=0,Params=0,addXY=True):  
     """
     Transform lat,lon to local coordinates around origin point
 
@@ -2655,6 +2731,57 @@ def get_XY(datamean,origin=0,Params=0,addXY=True):
     
     return x,y
 
+def get_XY(datamean,origin=0,Params=0,addXY=True):  
+    """
+    Transform lat,lon to local coordinates around origin point
+
+    Parameters
+    ----------
+    point : TYPE
+        x,y coordinates to point.
+    origin : TYPE
+        if int: index of coordinate to se as origin of local coordinate system
+        if: [lat,lon] coordinates of origin of local reference system.
+
+    Returns
+    -------
+    x : local x-coordinate in meters (west-east)
+    y : local y-coordinate in meters (south- north)
+
+    """
+    
+    origin=np.array(origin)
+    if len(origin.shape)==0:  
+        p0=[datamean.lat.values[origin],datamean.lon.values[origin]]
+    elif len(origin.shape)==1:  
+            p0=origin      
+
+    x,y=LatLonToXY(datamean.lat,datamean.lon,origin)
+    
+    if addXY:
+        datamean.loc[:,'x']=x
+        datamean.loc[:,'y']=y
+    
+    if type(Params)==dict:
+        Params['loc0']=origin
+    
+    return x,y
+
+def LatLonToXY(lat,lon,origin):
+    """Transform lat lon coordingates to local equidistance coordinates 
+    origin:  [lat, lon] of origin point  (0,0)
+    
+    return  x_east,y_north
+    """
+
+    # Create a transformer from geodetic (lat/lon) to local East-North projecting onto a tangent plane at the origin_lat, origin_lon
+    transformer = Transformer.from_crs(
+        crs_from="epsg:4326",  # WGS84 (latitude, longitude) - no height component
+        crs_to=f"+proj=tmerc +lat_0={origin[0]} +lon_0={origin[1]} +x_0=0 +y_0=0 +ellps=WGS84",
+        always_xy=True,
+        )
+
+    return transformer.transform(lon,lat)
 
 
 def get_bearing(start, end):
@@ -3801,7 +3928,7 @@ def CheckCalibration_multiFreq(dataINS,datamean,params,plot=True):
 
 
 
-def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title='',channels=[1,2,3]):
+def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title='',channels=[1,2,3], inspect=False):
     
     if units=='seconds':
         i_start=int(start*SPS)
@@ -3819,7 +3946,43 @@ def lookupSectionRaw(file,start,stop,SPS=19200,units='seconds',title='',channels
                        max_rows=i_stop,skip_header=i_start)
     if title=='':
         title='Raw data: {:.2f}s to {:.2f}s'.format(start,stop)
+    
+    
     return plotraw3(data,title=title,starttime=start,Chs=channels)
+        
+    
+
+
+def lookupSection(file,start,stop,SPS=19200,units='seconds',title='',channels=[1,2,3],):
+    
+    if units=='seconds':
+        i_start=int(start*SPS)
+        i_stop=int(stop*SPS)-i_start
+    elif units=='samples':
+        i_start=int(start)
+        i_stop=int(stop)-i_start
+        start=start/SPS
+        stop=stop/SPS
+    else:
+        raise ValueError('Units not recognised.') 
+        
+    data=np.genfromtxt(file, dtype='int32' , delimiter=',', usecols=[0,1,2,3],
+                       converters={1:convert,2:convert,3:convert},
+                       max_rows=i_stop,skip_header=i_start)
+    if title=='':
+        title='Raw data: {:.2f}s to {:.2f}s'.format(start,stop)
+   
+    plotraw3(data,title=title,starttime=start,Chs=channels)
+   
+    f,A,phase,Q,I= maxCorr_optimize(data[:,1],df=0.01,n=101,plot=False)
+    plot_modeledWindow(data,f,window=100, dWindow=50)
+    
+    for ch in channels:
+
+        f,A,phase,Q,I= maxCorr_optimize(data[:,ch],df=0.01,n=101,plot=True)
+    
+        plot_spectrograms(data[:,ch],SPS,scale='dB')
+
 
 
 def loadSectionRawData(file,start,stop,SPS=19200,units='seconds'):
@@ -4025,7 +4188,7 @@ def correlate(d,f,SPS,phase=0,flowpass=100,lims=[]):
     
 def getACorr(d,f,SPS,phase=0,flowpass=100,lims=[]):
     """
-    Deriving amplitude and phase and then aplly mean value. Way less freqeuncy sensitive than getAcorr_old.
+    Deriving amplitude and phase and then applly mean value. Way less freqeuncy sensitive than getAcorr_old.
     """
     Q, I=correlate(d,f,SPS,phase=phase,flowpass=flowpass,lims=lims)
     
