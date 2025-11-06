@@ -47,18 +47,18 @@ class MSG_type:
         for i,k in enumerate(keys):
             setattr(self,k,np.array([l[i] for l in values]))
 
-_MSG_list_=['Laser','PINS1','PSTRB','PINS2','GPGGA','PGPSP','VBat','Temp','Cal','SDwrite']    # NMEA message list to parse
-_keyList_=[['h','signQ','T','TOW'],        
-          ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'elevation','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
-          ['GPSWeek','TOW','pin','count'],
-          ['TOW','GPSWeek','insStatus','hdwStatus','QuatW','QuatX','QuatY','QuatZ','velX', 'velY', 'velZ','lat', 'lon', 'elevation'],
-          ['UTC','lat','lat_unit','lon','lon_unit','Fix','NSat','hDop','MSL','MSL_unit','ondulation','ondulation_unit','last_DGP','DGPS_ID'],
-          ['TOW','GPSWeek','status','Latitude','Longitude','elevation_HAE','elevation_MSL','pDOP','hAcc','vAcc','Vel_X','Vel_Y','Velocity_Z','sAcc','cnoMean','towOffset','leapS'],
-          ['V','TOW'],
-          ['T','sensor','TOW'],
-          ['On','ID','TOW'],
-          ['TOW']
-          ,]  # order matters!!
+# _MSG_list_=['Laser','PINS1','PSTRB','PINS2','GPGGA','PGPSP','VBat','Temp','Cal','SDwrite']    # NMEA message list to parse
+_keyList_={'Laser': ['h','signQ','T','TOW','TimeSTMP'],        
+           'PINS1': ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'elevation','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
+           'PSTRB': ['GPSWeek','TOW','pin','count'],
+           'PINS2': ['TOW','GPSWeek','insStatus','hdwStatus','QuatW','QuatX','QuatY','QuatZ','velX', 'velY', 'velZ','lat', 'lon', 'elevation'],
+           'GPGGA': ['UTC','lat','lat_unit','lon','lon_unit','Fix','NSat','hDop','MSL','MSL_unit','ondulation','ondulation_unit','last_DGP','DGPS_ID'],
+           'PGPSP': ['TOW','GPSWeek','status','Latitude','Longitude','elevation_HAE','elevation_MSL','pDOP','hAcc','vAcc','Vel_X','Vel_Y','Velocity_Z','sAcc','cnoMean','towOffset','leapS'],
+           'VBat': ['V','TOW','TimeSTMP'],
+           'Temp': ['T','sensor','TOW','TimeSTMP'],
+           'Cal': ['On','ID','TOW','TimeSTMP'],
+          'SDwrite': ['TOW']
+          ,}
 
 
 class INSLASERdata:
@@ -93,7 +93,7 @@ class INSLASERdata:
         self.c_roll=c_roll
         
         self.keyList=_keyList_.copy()
-        self.MSG_list=_MSG_list_.copy()
+        self.MSG_list=[k for k in _keyList_.keys( )]
         
         
         if verbose:
@@ -151,11 +151,11 @@ class INSLASERdata:
                         continue
                     
                 try:
-                  j=self.MSG_list.index(Msg_key)
-                  if len(data)!=len(self.keyList[j]):
+                  # j=self.MSG_list.index(Msg_key)
+                  if len(data)!=len(self.keyList[Msg_key]):
                       self.corrupt.append(l)
                       continue
-                except ValueError:
+                except KeyError:
                     if self.verbose:
                         print("Message {:s} not in NMEA message list. Dropping it.".format(Msg_key))
                     continue
@@ -166,13 +166,13 @@ class INSLASERdata:
                 
                 
             elif l.find('D ')!=-1:
-                self.LaserList.append(parseLaser(l,self.verbose)+(self.ToW,) )
+                self.LaserList.append(parseLaser(l,self.verbose)+(self.ToW,get_Timestamp(l)) )
             elif l.find('Cal')!=-1:
-                self.CalList.append(parseCalibration(l,self.verbose)+(self.ToW,) )    
+                self.CalList.append(parseCalibration(l,self.verbose)+(self.ToW,get_Timestamp(l)) )    
             elif l.find('Temp')!=-1:
-                self.TempList.append(parseTemp(l,self.verbose)+(self.ToW,) ) 
+                self.TempList.append(parseTemp(l,self.verbose)+(self.ToW,get_Timestamp(l)) ) 
             elif l.find('VBat')!=-1:
-                self.VBatList.append((parseVBat(l,self.verbose),self.ToW,) ) 
+                self.VBatList.append((parseVBat(l,self.verbose),self.ToW,get_Timestamp(l)) ) 
             elif l.find('SDwrite')!=-1:
                 self.SDwriteList.append((self.ToW,))  
             
@@ -197,7 +197,7 @@ class INSLASERdata:
             setattr(self,msg,MSG_type(msg) )
             if len(getattr(self,msg+'List'))>0:
                 values=np.array(getattr(self,msg+'List'))
-                keys=self.keyList[self.MSG_list.index(msg)]
+                keys=self.keyList[msg]
                 # print(keys)
                 getattr(self,msg).addData(keys,values)
             
@@ -241,6 +241,9 @@ class INSLASERdata:
         except AttributeError:
             None
     
+    
+        # extract calibrations starts and timestamps 
+        get_CalibrationStart_Stop(self)
     
     #------------------------------------------
     ########## Functions definitions ##########
@@ -510,9 +513,10 @@ def parseCalibration(l,verbose=True):
     """
     l: string with data
     
-    return calibration ID and On/Off status 
+    return calibration ID, On/Off status
         case on:    ID is the calibration coil state (code sent to I2C switch)
         case off:   ID is a flag and 0 for switching off, 1 fro starting calibration and 2 for calibration process end
+    
     
     """
     
@@ -563,15 +567,18 @@ def parseCalibration(l,verbose=True):
         on= False
         if verbose: 
             print('Coud not parse string:', l)                 
-
+    
+    
 
     return on,ID
+
+
 
 def parseTemp(l,verbose=True):
     """
     l: string with data
     
-    return calibration ID and Temperature in Celsius
+    return Temperature Sensor ID and Temperature in Celsius
     
     """
     
@@ -688,7 +695,26 @@ def parseLaser(l,verbose=True):
 
 
     return h,signQ,T
+
+def get_Timestamp(l):
+    """
+    l: string with data
+    TOW: time of Week to append to message data
     
+    return elevation, signal quality, temperature 
+    
+    """
+    pattern = r'@(\d+)'
+    
+    match = re.search(pattern, l)
+    
+    if match:
+        # group(1) returns the content of the first capturing group, which is the integer string.
+        return int(match.group(1))
+    else:
+        return None
+
+
 def chksum_nmea(sentence):
     # From: http://doschman.blogspot.com/2013/01/calculating-nmea-sentence-checksums.html
    
@@ -806,6 +832,20 @@ def gps_datetime(time_week, time_s, leap_seconds=18):
     gps_epoch = datetime(1980, 1, 6, tzinfo=ZoneInfo("UTC"))
     return gps_epoch + timedelta(weeks=time_week, 
                                  seconds=time_s-leap_seconds)
+
+
+def get_CalibrationStart_Stop(dataINS):
+
+    start_ind=(dataINS.Cal.On==0) * (dataINS.Cal.ID==1)
+    dataINS.Cal.Start_TOW=dataINS.Cal.TOW[start_ind]
+    dataINS.Cal.Start_Time=dataINS.Cal.Start_TOW-dataINS.TOW0
+    dataINS.Cal.Start_STMP=dataINS.Cal.TimeSTMP[start_ind]/1000
+    
+    
+    dataINS.Cal.Stop_TOW=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==2)]
+    dataINS.Cal.Stop_Time=dataINS.Cal.Stop_TOW-dataINS.TOW0
+    dataINS.Cal.Start_Time=dataINS.Cal.Start_TOW-dataINS.TOW0
+    dataINS.Cal.Start_STMP=dataINS.Cal.TimeSTMP[start_ind]/1000
 
 
 #%%  Sync Laser and GPX data from UAV

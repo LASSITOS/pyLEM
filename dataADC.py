@@ -379,13 +379,18 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
     
     # derive calibration parameters from automatic calibration using calibration coil
     if autoCal and dataINS.Cal.len>0:
-        gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration(dataINS,
+        try:
+            gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off=CheckCalibration(dataINS,
                                                                               datamean,
                                                                               params,
                                                                               params['f'],
                                                                               Rx_ch=Rx_ch,
                                                                               plot=plot)
+        except Exception as e: 
+                    print("error. Can't calibrate data. Autocalibration not possible!!!")
+                    print(e)
 
+            
     
         # Define transformation function
         def Coordinate_trans(I,Q, g, phi):
@@ -1472,7 +1477,7 @@ def plot_QIandTemp(datamean,dataINS,params,title=''):
     if len(title)>0:
         ax.set_title(title)
     else:
-        ax.set_title(f'File: {params['name']:s}, f={params['f']/1000:.1f} kHz')
+        ax.set_title('File: {:s}, f={:.1f} kHz'.format(params['name'],params['f']/1000))
     
     ax3=ax2.twinx()
     ax2.plot(dataINS.Temp.TOW1-dataINS.TOW0,dataINS.Temp.T1,'-',color=colors[0],label='T1')
@@ -2857,12 +2862,28 @@ def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
         datamean['time']=datamean.TOW-TOW0
     
         # interpolate PINS1 data
-        interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'elevation',])
+        # interpolData(dataINS.PINS1,datamean,['TOW','heading','velX','velY','velZ','lat','lon', 'elevation',])
+        interpolData(dataINS.PINS1,datamean,['heading','velX','velY','velZ','lat','lon', 'elevation',])
         datamean.rename(columns={'elevation':'h_GPS'}, inplace=True)
+        
+        # interpolate Laser data
         interpolData(dataINS.Laser,datamean,['h_corr', 'roll', 'pitch','signQ', 'T'])
         datamean.rename(columns={"T": "TempLaser",'h_corr':'h_Laser'}, inplace=True)
         
         datamean['diff_hGPSLaser']=datamean.h_GPS-datamean.h_Laser
+        
+        # interpolate Voltage battery
+        interpolData(dataINS.VBat,datamean,['V'])
+        datamean.rename(columns={'V':'VBat'}, inplace=True)
+        
+        # interpolate Temperature data
+        for i in range(1,4):
+            try:
+                tdata= {'TOW':getattr(dataINS.Temp,f'TOW{i:d}'),f'Temp{i:d}':getattr(dataINS.Temp,f'T{i:d}')}
+                interpolData_dict(tdata,datamean,[f'Temp{i:d}'])
+            except AttributeError:
+                None
+        
         
     except AttributeError as error: 
          print(error)
@@ -2881,7 +2902,15 @@ def interpolData(data,datamean,proplist):
         x=getattr(data,p)
         datamean[p]=x[ind]+(x[ind]-x[ind-1])*dt
     
-
+def interpolData_dict(data,datamean,proplist):
+    ind=np.searchsorted(data['TOW'],datamean.TOW)
+    ind[ind>len(data['TOW'])-1]=len(data['TOW'])-1
+    ind[ind==0]=1
+    dt=(datamean.TOW-data['TOW'][ind])/(data['TOW'][ind]-data['TOW'][ind-1])
+    
+    for p in proplist:
+        x=data[p]
+        datamean[p]=x[ind]+(x[ind]-x[ind-1])*dt
 
 gps_datetime_np=np.vectorize(gps_datetime, doc='Vectorized `gps_datetime`')
 
@@ -3767,26 +3796,38 @@ def CheckCalibration(dataINS,datamean,params,f,Rx_ch=['ch1'],plot=True):
     phis=[]
     
     for  k,[st,stp,off2,on2] in enumerate(zip(start,stop,off,on ) ):
-         calQs2.append([])
-         calIs2.append([])
-         calQ0.append([])
-         calI0.append([])
-         # print(gs)
-         gs.append([])
-         phis.append([])
-         for i,ch in enumerate(Rx_ch):     
-            calQ=(calQs[k,i,1:].transpose()-calQs[k,i,0])
-            calI=(calIs[k,i,1:].transpose()-calIs[k,i,0])
-            
-            g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=plot, CalParams= CalParams)
-            
-            calQs2[k].append(calQ)
-            calIs2[k].append(calI)
-            calQ0[k].append(calQs[k,i,0])
-            calI0[k].append(calIs[k,i,0])
-            gs[k].append(g)
-            phis[k].append(phi)
-    
+         try:
+             calQs2.append([])
+             calIs2.append([])
+             calQ0.append([])
+             calI0.append([])
+             # print(gs)
+             gs.append([])
+             phis.append([])
+             for i,ch in enumerate(Rx_ch):     
+                calQ=(calQs[k,i,1:].transpose()-calQs[k,i,0])
+                calI=(calIs[k,i,1:].transpose()-calIs[k,i,0])
+                
+                g,phi,[res,params2,res3]=fitCalibrationParams(calQ,calI,f,plot=plot, CalParams= CalParams)
+                
+                calQs2[k].append(calQ)
+                calIs2[k].append(calI)
+                calQ0[k].append(calQs[k,i,0])
+                calI0[k].append(calIs[k,i,0])
+                gs[k].append(g)
+                phis[k].append(phi)
+                
+         except Exception as e: 
+                    print("Can't fit data. Filling in bogus data.")
+                    print(e)
+                    
+                    calQs2[k].append(calQ)
+                    calIs2[k].append(calI)
+                    calQ0[k].append(calQs[k,i,0])
+                    calI0[k].append(calIs[k,i,0])
+                    gs[k].append(1)
+                    phis[k].append(0)
+                    
     
     return gs,phis, calQs2,calIs2,calQ0,calI0,start,stop,on,off
     
