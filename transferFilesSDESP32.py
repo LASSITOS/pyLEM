@@ -68,7 +68,7 @@ def list_files(com=COMPORT,baud=BAUDRATE,timeout=5):
         STOP=False
         t=time.time()
 
-        bitstring=b'LIST'
+        bitstring=b'LIST\n'
 
 
         ser.write(bitstring) 
