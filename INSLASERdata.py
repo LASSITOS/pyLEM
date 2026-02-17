@@ -243,8 +243,13 @@ class INSLASERdata:
     
     
         # extract calibrations starts and timestamps 
-        get_CalibrationStart_Stop(self)
-    
+        try:
+            get_CalibrationStart_Stop(self)
+        except Exception as e:
+            print("Getting calibration poionts failed!")
+            print(e)
+            
+            
     #------------------------------------------
     ########## Functions definitions ##########
     #------------------------------------------
