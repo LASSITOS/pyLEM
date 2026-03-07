@@ -361,6 +361,13 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
     
     CalParams={}
     
+    # Define transformation function
+    def Coordinate_trans(I,Q, g, phi):
+        X = Q*1j+I
+        Z=g*X*np.exp(phi*1j)
+        return np.real(Z), np.imag(Z)
+    
+    
     if i_cal!=[]:
         print('calibrating!')
         for i,ch in enumerate(Rx_ch):
@@ -386,43 +393,40 @@ def Calibrate(datamean,dataINS,params,Rx_ch,i_cal,autoCal=True,i_autoCal=0,plot=
                                                                               params['f'],
                                                                               Rx_ch=Rx_ch,
                                                                               plot=plot)
+            
+            
+            k=i_autoCal # define which  calibration cicle to use
+            
+            # transform Voltage data to normalized secondary field using derived calibration parameters 
+            for i,ch in enumerate(Rx_ch):
+                j=i+1
+                
+    
+                I,Q=Coordinate_trans(datamean[f'I_Rx{j:d}']-calI0[i_autoCal][i],
+                          datamean[f'Q_Rx{j:d}']-calQ0[i_autoCal][i], 
+                          gs[i_autoCal][i], 
+                          phis[i_autoCal][i])
+                
+                datamean[f'I_Rx{j:d}']=I
+                datamean[f'Q_Rx{j:d}']=Q
+        
+        
+            CalParams['g']=np.array(gs)[i_autoCal,:]
+            CalParams['phi']=np.array(phis)[i_autoCal,:]
+            CalParams['Q0']=np.array(calQ0)[i_autoCal,:]
+            CalParams['I0']=np.array(calI0)[i_autoCal,:]
+            CalParams['start']=start[i_autoCal]
+            CalParams['stop']=stop[i_autoCal]
+            CalParams['on']=on[i_autoCal]
+            CalParams['off']=off[i_autoCal]
+            
         except Exception as e: 
                     print("error. Can't calibrate data. Autocalibration not possible!!!")
                     print(e)
-
-            
-    
-        # Define transformation function
-        def Coordinate_trans(I,Q, g, phi):
-            X = Q*1j+I
-            Z=g*X*np.exp(phi*1j)
-            return np.real(Z), np.imag(Z)
-        
-        k=i_autoCal # define which  calibration cicle to use
-        
-        # transform Voltage data to normalized secondary field using derived calibration parameters 
-        for i,ch in enumerate(Rx_ch):
-            j=i+1
-            
-
-            I,Q=Coordinate_trans(datamean[f'I_Rx{j:d}']-calI0[i_autoCal][i],
-                      datamean[f'Q_Rx{j:d}']-calQ0[i_autoCal][i], 
-                      gs[i_autoCal][i], 
-                      phis[i_autoCal][i])
-            
-            datamean[f'I_Rx{j:d}']=I
-            datamean[f'Q_Rx{j:d}']=Q
-    
-    
-        CalParams['g']=np.array(gs)[i_autoCal,:]
-        CalParams['phi']=np.array(phis)[i_autoCal,:]
-        CalParams['Q0']=np.array(calQ0)[i_autoCal,:]
-        CalParams['I0']=np.array(calI0)[i_autoCal,:]
-        CalParams['start']=start[i_autoCal]
-        CalParams['stop']=stop[i_autoCal]
-        CalParams['on']=on[i_autoCal]
-        CalParams['off']=off[i_autoCal]
-    
+                    params['autoCal']=False
+                    
+                    ## Should use some standard parameters here!!!!
+      
     elif dataINS.Cal.len==0:
         print('No calibration stamps found!  Autocalibration not possible!!!')
         params['autoCal']=False
