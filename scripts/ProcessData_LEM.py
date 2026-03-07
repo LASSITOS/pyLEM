@@ -30,11 +30,9 @@ pcpath=GDrive_path
 # scriptspath=r'C:\Users\H6\LEMcode'
 
 sys.path.append(scriptspath)
-sys.path.append(scriptspath+r'\pyLEM')
-from dataADC import*
-from INSLASERdata import *
+from pyLEM.dataADC import *
+from pyLEM.INSLASERdata import *
 
- 
 
 
 
@@ -90,7 +88,7 @@ t1=238
 
 lookupSectionRaw(fileADC,t0,t1,SPS=19200,units='seconds',title='File:'+filename, channels=[1,2])
 
-# %% plot INS daata to set 
+# %% plot INS data to set 
 dataINS=INSLASERdata(fileLASER,correct_Laser=True,
                      roll0=0.0,pitch0=0.0)
 

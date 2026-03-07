@@ -24,9 +24,15 @@ pcpath=GDrive_path
 
 
 sys.path.append(scriptspath)
-sys.path.append(scriptspath+r'\pyLEM')
-from dataADC import*
-from INSLASERdata import *
+
+
+from pyLEM.dataADC import *
+from pyLEM.INSLASERdata import *
+
+
+# sys.path.append(scriptspath+r'\pyLEM')
+# from dataADC import*
+# from INSLASERdata import *
 
 
 
@@ -51,6 +57,7 @@ filename='000101_144839'
 fileLASER=path+r'/INS'+filename+'.csv'
 fileADC=path+r'/ADC'+filename+'.csv'
 
+print("File to process is:", fileADC)
 
 # %% Load last file
 
@@ -113,7 +120,7 @@ CheckCalibration(dataINS,datamean,params['f'],plot=True)
 # %% plot section of raw data
 
 t0=5
-t1=45
+t1=8
 
 lookupSectionRaw(fileADC,t0,t1,SPS=19200,units='seconds',title='File:'+filename, channels=[1,2])
 

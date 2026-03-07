@@ -46,8 +46,8 @@ except ModuleNotFoundError:
 from cmcrameri import cm as cmCrameri
 
 
-from INSLASERdata import *
-import save_load as sl
+from pyLEM.INSLASERdata import *
+import pyLEM.src.save_load as sl
 
 
 
