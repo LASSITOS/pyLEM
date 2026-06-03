@@ -285,6 +285,24 @@ def read_file(file,path='',printcontent=False,com=COMPORT,baud=BAUDRATE,timeout=
 #%%
 if __name__ == "__main__":
     if len(sys.argv) > 1:
+        # Check for help
+        if any(arg in sys.argv for arg in ['-h', '--help']) or any('help' in arg for arg in sys.argv):
+            print("""
+Usage: python transferFilesSDESP32.py [arguments]
+
+Arguments (key=value format):
+  file      : Name of the file to read from ESP32 SD card.
+  path      : Local path where to save the file. Default is './'.
+  list      : If True, lists files on the SD card. Default is False.
+  COM       : Serial port (e.g., COM21 or 21). Default is 'COM21'.
+  baud      : Baud rate for serial communication. Default is 460800.
+
+Example:
+  python transferFilesSDESP32.py file=data.csv path=C:/data COM=21 baud=115200
+  python transferFilesSDESP32.py list=True COM=COM21
+            """)
+            sys.exit(0)
+
         # Print the arguments passed in from the command line
         # print("Arguments passed in from the command line:")
         kwargs = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
