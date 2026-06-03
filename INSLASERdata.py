@@ -56,6 +56,7 @@ _keyList_={'Laser': ['h','signQ','T','TOW','TimeSTMP'],
            'PGPSP': ['TOW','GPSWeek','status','Latitude','Longitude','elevation_HAE','elevation_MSL','pDOP','hAcc','vAcc','Vel_X','Vel_Y','Velocity_Z','sAcc','cnoMean','towOffset','leapS'],
            'VBat': ['V','TOW','TimeSTMP'],
            'Temp': ['T','sensor','TOW','TimeSTMP'],
+           'ThermT': ['T','R','V','sensor','TOW','TimeSTMP'],
            'Cal': ['On','ID','TOW','TimeSTMP'],
           'SDwrite': ['TOW']
           ,}
@@ -170,7 +171,9 @@ class INSLASERdata:
             elif l.find('Cal')!=-1:
                 self.CalList.append(parseCalibration(l,self.verbose)+(self.ToW,get_Timestamp(l)) )    
             elif l.find('Temp')!=-1:
-                self.TempList.append(parseTemp(l,self.verbose)+(self.ToW,get_Timestamp(l)) ) 
+                self.TempList.append(parseTemp(l,self.verbose)+(self.ToW,get_Timestamp(l)) )
+            elif l.find('Therm')!=-1:
+                self.ThermTList.append(parseThermT(l,self.verbose)+(self.ToW,get_Timestamp(l)) )
             elif l.find('VBat')!=-1:
                 self.VBatList.append((parseVBat(l,self.verbose),self.ToW,get_Timestamp(l)) ) 
             elif l.find('SDwrite')!=-1:
@@ -210,13 +213,27 @@ class INSLASERdata:
         self.TOW0=get_TOW0(self)
         
         # extract single temperature sensors
-        for j in range(1,4):
+        for j in range(1,5):
             i=self.Temp.sensor==j
             if np.any(i):
                 setattr(self.Temp,f'TOW{j:d}',self.Temp.TOW[i])
                 setattr(self.Temp,f'T{j:d}',self.Temp.T[i])
                 setattr(self.Temp,f't{j:d}',self.Temp.TOW[i]-self.TOW0)
-        
+                setattr(self.Temp,f'TimeSTMP{j:d}',self.Temp.TimeSTMP[i])
+                
+            try:
+                i=self.ThermT.sensor==(j-1)
+                if np.any(i):
+                    setattr(self.ThermT,f'TOW{j:d}',self.ThermT.TOW[i])
+                    setattr(self.ThermT,f'T{j:d}',self.ThermT.T[i])
+                    setattr(self.ThermT,f't{j:d}',self.ThermT.TOW[i]-self.TOW0)
+                    setattr(self.ThermT,f'R{j:d}',self.ThermT.R[i])
+                    setattr(self.ThermT,f'V{j:d}',self.ThermT.V[i])
+                    setattr(self.ThermT,f'TimeSTMP{j:d}',self.ThermT.TimeSTMP[i])
+            except AttributeError:
+                print(f" Thermistor {j:d} not found")
+                # print(" Thermistor not found")
+            
         # redistribute TOW for laser eliminating zero intervals
         self.redistributeLaserTOW()
         
@@ -577,6 +594,43 @@ def parseCalibration(l,verbose=True):
 
     return on,ID
 
+
+def parseThermT(l, verbose=True):
+    """
+    l: string with data
+
+    return Temperature Sensor ID and Temperature in Celsius
+
+    """
+    V = -999
+    R = -999
+    Temp = 99
+    ID = 0
+
+    if l[:5] == 'Therm':
+        
+        a = l.split('@')[0].split(',')
+        # print(l)
+        # print(a)
+        try:
+            Temp = float(a[1].split('T')[1])
+            V = float(a[2].split('V')[1])
+            R = float(a[3].split('R')[1])
+            ID = int(a[0][5:])
+        except Exception as e:
+            print(e)
+            Temp = np.nan
+            ID = np.nan
+            if verbose:
+                print('Coud not parse string:', l)
+
+    else:
+        ID = np.nan
+        Temp = np.nan
+        if verbose:
+            print('Coud not parse string:', l)
+
+    return Temp, R, V, ID
 
 
 def parseTemp(l,verbose=True):
@@ -1081,14 +1135,26 @@ def mergeByTime(t1,x,t2, method='linInterpol', maxDelta=0,dT=0):
 # %% plot functions
    
 
-def plot_Temp_Voltage(data,title=''):
+def plot_Temp_Voltage(data,title='',ax=[]):
    
-    fig,ax=pl.subplots(1,1,sharex=True)
+    if ax==[]:
+        fig,ax=pl.subplots(1,1) 
+   
+    labels=['Tx','Tube','ADC','-']
     for j in range(1,4):
         try:
-            ax.plot(getattr(data.Temp,f't{j:d}'),getattr(data.Temp,f'T{j:d}'),label=f'T{j:d}')
+            ax.plot(getattr(data.Temp,f't{j:d}'),getattr(data.Temp,f'T{j:d}'),label=f'T{j:d}'+labels[j-1])
         except AttributeError:
             None
+            
+    try:
+         pl.plot(data.ThermT.t1,data.ThermT.T1,label='Therm1, ADC')
+         pl.plot(data.ThermT.t2,data.ThermT.T2,label='Therm2, Tx Sense')
+         pl.plot(data.ThermT.t3,data.ThermT.T3,label='Therm3, Tx coil')
+         pl.plot(data.ThermT.t4,data.ThermT.T4,label='Therm4, Rx coil')
+         
+    except AttributeError:
+                None
     ax.plot(data.Laser.TOW-data.TOW0,data.Laser.T,label='Laser')
     ax.legend(loc=2)
     ax.set_ylabel('Temperature (C)')
@@ -1104,7 +1170,34 @@ def plot_Temp_Voltage(data,title=''):
         
     return fig
 
+def plot_Temps(data,title='',ax=[]): 
     
+    if ax==[]:
+        fig,ax=pl.subplots(1,1)
+    
+    labels=['Tx','Tube','ADC','-']
+    for j in range(1,4):
+        try:
+            ax.plot(getattr(data.Temp,f't{j:d}'),getattr(data.Temp,f'T{j:d}'),label=f'T{j:d}'+labels[j-1])
+        except AttributeError:
+            None
+            
+    try:
+         pl.plot(data.ThermT.t1,data.ThermT.T1,label='Therm1, ADC')
+         pl.plot(data.ThermT.t2,data.ThermT.T2,label='Therm2, Tx Sense')
+         pl.plot(data.ThermT.t3,data.ThermT.T3,label='Therm3, Tx coil')
+         pl.plot(data.ThermT.t4,data.ThermT.T4,label='Therm4, Rx coil')
+    except AttributeError:
+            None
+            
+    ax.legend()
+    ax.set_ylabel('Temperature (C)')
+    ax.set_xlabel('Time (s)')
+
+    if title!='none':
+        ax.set_title(title)
+        
+    return fig
 
 def plot_GPSquality(data,title=''):
         
@@ -1356,7 +1449,10 @@ def plot_longlat(data,z='elevation',ax=[],cmap= cm.batlow):
     pl.title(data.name)
     pl.tight_layout()
 
-        
+
+    
+    
+    
 
 def plot_summary(data,extent,cmap=cm.batlow,heading=True,title=''):
     
