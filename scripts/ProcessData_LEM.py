@@ -18,16 +18,13 @@ try:
 except:
     print("coudn't install hampel")
 
-import time
-
-from MyPaths import*  # File with path of script locations. Specific for each computer. As alternative specify path to be add to sys.
-
-# if you set up scripth path masterfile
-scriptspath=LEMscripts_path
-pcpath=GDrive_path
+# from MyPaths import*  # File with path of script locations. Specific for each computer. As alternative specify path to be add to sys.
+# # if you set up scripth path masterfile
+# scriptspath=LEMscripts_path
+# pcpath=GDrive_path
 
 #if you use a direct path
-# scriptspath=r'C:\Users\H6\LEMcode'
+scriptspath=r'C:\Users\H6\LEMcode'
 
 sys.path.append(scriptspath)
 from pyLEM.dataADC import *
