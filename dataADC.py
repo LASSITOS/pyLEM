@@ -27,6 +27,7 @@ from matplotlib.gridspec import GridSpec
 import pandas as pd
 import glob
 import math
+import struct
 
 from scipy import signal
 from scipy import optimize
@@ -35,7 +36,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from scipy.optimize import curve_fit,least_squares
 from scipy.stats import linregress
-
+from pathlib import Path
 from pyproj import Transformer
 
 # non anaconda libraries
@@ -290,6 +291,74 @@ def processDataLEM(path,name, Tx_ch='ch2', Rx_ch=['ch1','ch2'],
 
 #%%  Supporting functions for loading and handling data + Postprocessing
 
+def joinDataLEM_onboardSimulator(path,name,
+                                 iStart=2,dT_start=0,T_max=0,
+                                 plot=False, plotINS=False,
+                                 saveCSV=True,saveBIN=True,
+                                 INSkargs={},
+                                 **kwargs):
+    params = locals()  # add all function arguments to dictionary
+
+    path = Path(path)
+
+    file = path / f'ADC{name}.csv'
+    fileLASER = path / f'INS{name}.csv'
+
+    header = loadDataHeader(fileLASER)
+    params.update(header)
+
+    print('Load INS+Laser: ', file)
+    try:
+        dataINS = INSLASERdata(fileLASER, name=fileLASER.name, **INSkargs)
+    except FileNotFoundError:
+        raise ('Lase file: ', file, ' can not be loaded')
+
+    TOW0 = get_TOW0(dataINS, iStart=iStart)+ dT_start
+    print('TOW0 ADC: {:f}, dT_start: {:f}'.format(TOW0, dT_start))
+
+    print('Reading file: ',file, ' and add Laser +GPS data')
+    file_in = open(file, 'rt')
+    if saveCSV:
+        fileOut_csv = open(path / f'simLEM{name}.csv', 'wt')
+    if saveBIN:
+        fileOut_csv.write("index,ch1,ch2,ch3,h_Laser,TOW,lat,lon,elevation\n")
+
+    fileOut_bin = open(path / f'simLEM{name}.bin', 'wb')
+    i = 0
+    i_Laser=0
+    i_INS=0
+    for l in file_in:
+        i+=1
+        i_Laser=np.searchsorted(dataINS.Laser.TOW[i_Laser-1:],i/SPS+TOW0, side='right')
+        i_INS=np.searchsorted(dataINS.PINS1.TOW[i_INS-1:], i/SPS+TOW0, side='right')
+        if saveCSV:
+            fileOut_csv.write(l.strip('\n').strip('\r')+",{:.2f},{:.3f},{:.8f},{:.8f},{:.3f}\n".format(dataINS.Laser.h[i_Laser],
+                                                                              dataINS.PINS1.TOW[i_INS],
+                                                                              dataINS.PINS1.lat[i_INS],
+                                                                              dataINS.PINS1.lon[i_INS],
+                                                                              dataINS.PINS1.elevation[i_INS],))
+        if saveBIN:
+            # parse line into integers and write binary record
+            parts = l.strip().split(',')
+            index = int(parts[0])
+            ch1 = int(parts[1], 16)
+            ch2 = int(parts[2], 16)
+            ch3 = int(parts[3], 16)
+            fileOut_bin.write(struct.pack('<IIIIfffff',
+                                          index, ch1, ch2, ch3,
+                                          dataINS.Laser.h[i_Laser],
+                                          dataINS.PINS1.TOW[i_INS],
+                                          dataINS.PINS1.lat[i_INS],
+                                          dataINS.PINS1.lon[i_INS],
+                                          dataINS.PINS1.elevation[i_INS]))
+
+        if T_max<i/SPS and T_max >0:
+            break
+    file_in.close()
+    if saveCSV:
+        fileOut_csv.close()
+    if saveBIN:
+        fileOut_bin.close()
 
 def saveDataLEM(datamean, dataINS,params,saveCSV=True,savePKL=True):
     """
@@ -2887,15 +2956,15 @@ def sync_ADC_INS(datamean,dataINS,iStart=2,dT_start=0):
                 interpolData_dict(tdata,datamean,[f'Temp{i:d}'])
             except AttributeError:
                 None
-        
-        
+
     except AttributeError as error: 
          print(error)
          print("Can't find right INS data. Continue without them.")
          datamean['TOW']=datamean.index/SPS
          TOW0=0
     return TOW0
-        
+
+
 def interpolData(data,datamean,proplist):
     ind=np.searchsorted(data.TOW,datamean.TOW)
     ind[ind>len(data.TOW)-1]=len(data.TOW)-1
