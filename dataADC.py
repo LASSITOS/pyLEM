@@ -3419,12 +3419,15 @@ def getCalTimes(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1']):
     
     
     # find start and stop   
-    start=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==1)]-TOW0
-    stop=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==2)]-TOW0
+    start=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==-1)]-TOW0
+    stop=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==-2)]-TOW0
     off=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==0)]-TOW0
     on=dataINS.Cal.TOW[(dataINS.Cal.On==1)]-TOW0
     ID=dataINS.Cal.ID[(dataINS.Cal.On==1)]
-    
+
+
+    if len(start)==0 and len(stop)>0:
+        start = dataINS.Cal.TOW[(dataINS.Cal.On == 1) * (dataINS.Cal.ID == 1)] - TOW0 -3
     
     off1=[]
     on1=[]
@@ -3490,7 +3493,9 @@ def getCalTimes_multi(dataINS,datamean,t_buf=0.2,t_int0=3,Rx_ch=['ch1'],n_freqs=
     on=dataINS.Cal.TOW[(dataINS.Cal.On==1)]-TOW0
     ID=dataINS.Cal.ID[(dataINS.Cal.On==1)]
     
-    
+    if len(start)==0 and len(stop)>0:
+        start = dataINS.Cal.TOW[(dataINS.Cal.On == 0) * (dataINS.Cal.ID == -1)] - TOW0 -3
+
     off1=[]
     on1=[]
     ID1=[]

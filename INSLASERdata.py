@@ -68,7 +68,9 @@ class INSLASERdata:
     # extr_list=['PINS1','Laser']
     
     def __init__(self,filepath,name='',load=True, droplaserTow0=True,
-                 correct_Laser=True,distCenter=0, pitch0=0, roll0=0,laser_time_offset=0,c_pitch=1,c_roll=1,verbose=False):
+                 UseTimestamps=True,
+                 correct_Laser=True,distCenter=0, pitch0=0, roll0=0,laser_time_offset=0,c_pitch=1,c_roll=1,
+                 verbose=False):
         """
             Read GNSS and Laser data from .ubx data file. Additional methods are available for plotting and handling data.    
         
@@ -103,10 +105,10 @@ class INSLASERdata:
                 self.verbose=False
         
         if load:
-            self.loadData(correct_Laser=correct_Laser,droplaserTow0=droplaserTow0)
+            self.loadData(correct_Laser=correct_Laser,droplaserTow0=droplaserTow0,UseTimestamps=UseTimestamps)
 
     
-    def loadData(self,correct_Laser=0,droplaserTow0=True):
+    def loadData(self,correct_Laser=0,droplaserTow0=True,UseTimestamps=True):
         if not os.path.isfile(self.filepath) :
             print("File not found!!!")
             raise FileNotFoundError('File: {:s}'.format(self.filepath))
@@ -206,8 +208,21 @@ class INSLASERdata:
             
             # delattr(self,msg+'List')
             
-        print("Total lines read: ", i)   
-        
+        print("Total lines read: ", i)
+
+        if UseTimestamps:
+            for msg in (self.MSG_list):
+
+                attr=getattr(self,msg)
+                if hasattr(attr,'TimeSTMP'):
+                    attr.TOW_old=attr.TOW.copy()
+                    attr.TOW=np.where(attr.TimeSTMP!=None,attr.TimeSTMP,attr.TOW_old*1000)/1000
+
+                    ind=np.where(attr.TimeSTMP!=None)[0]
+                    print("Using Timestamps for {:s}: \n\tmean(Delta_TOW)={:.3f} s \n\tmean(Abs(Delta_TOW))={:.3f} s ".format(msg,
+                                                                                                                              np.mean(attr.TOW[ind]-attr.TOW_old[ind]),
+                                                                                                                              np.mean(np.abs(attr.TOW[ind]-attr.TOW_old[ind]))))
+
         
         # get starting point
         self.TOW0=get_TOW0(self)
@@ -233,7 +248,11 @@ class INSLASERdata:
             except AttributeError:
                 print(f" Thermistor {j:d} not found")
                 # print(" Thermistor not found")
+        
             
+        
+        
+        
         # redistribute TOW for laser eliminating zero intervals
         self.redistributeLaserTOW()
         
@@ -493,11 +512,11 @@ def parseNMEA(l,verbose=True):
               a=np.array(l[start+len(Msg_key)+2:end].split(','))
           except:
               if verbose: 
-                  print('Coud not parse valid NMEA string:', l)  
+                  print('Could not parse valid NMEA string:', l)  
               return 'Error',l 
     else:
         if verbose:   
-            print('Coud not parse valid NMEA string:', l)  
+            print('Could not parse valid NMEA string:', l)  
         return 'Error',l             
 
     return Msg_key,a
@@ -522,10 +541,10 @@ def parseNMEAfloat(l,verbose=True):
           a=np.array(l[start+len(Msg_key)+2:end].split(','),dtype=float)
 
       except:
-              # print('Coud not parse valid NMEA string:', l)  
+              # print('Could not parse valid NMEA string:', l)  
               return 'Error',l 
     else:
-        # if verbose: print('Coud not parse string:', l)    
+        # if verbose: print('Could not parse string:', l)    
         return 'Error',l             
 
     return Msg_key,a
@@ -537,7 +556,7 @@ def parseCalibration(l,verbose=True):
     
     return calibration ID, On/Off status
         case on:    ID is the calibration coil state (code sent to I2C switch)
-        case off:   ID is a flag and 0 for switching off, 1 fro starting calibration and 2 for calibration process end
+        case off:   ID is a flag and 0 for switching off, -1 for starting calibration and -2 for calibration process end
     
     
     """
@@ -556,7 +575,7 @@ def parseCalibration(l,verbose=True):
                 on= False
                 ID=np.nan
                 if verbose: 
-                    print('Coud not parse string:', l)
+                    print('Could not parse string:', l)
     elif l[:6]=='CalOff': 
             try:
                 on= False
@@ -565,30 +584,30 @@ def parseCalibration(l,verbose=True):
                 on= False
                 ID=np.nan
                 if verbose: 
-                    print('Coud not parse string:', l)
+                    print('Could not parse string:', l)
     elif l[:6]=='CalEnd': 
             try:
                 on= False
-                ID=2
+                ID=-2
             except:
                 on= False
                 ID=np.nan
                 if verbose: 
-                    print('Coud not parse string:', l)
+                    print('Could not parse string:', l)
     elif l[:8]=='CalStart': 
             try:
                 on= False
-                ID=1
+                ID=-1
             except:
                 on= False
                 ID=np.nan
                 if verbose: 
-                    print('Coud not parse string:', l)
+                    print('Could not parse string:', l)
     else:
         ID= np.nan
         on= False
         if verbose: 
-            print('Coud not parse string:', l)                 
+            print('Could not parse string:', l)                 
     
     
 
@@ -622,13 +641,13 @@ def parseThermT(l, verbose=True):
             Temp = np.nan
             ID = np.nan
             if verbose:
-                print('Coud not parse string:', l)
+                print('Could not parse string:', l)
 
     else:
         ID = np.nan
         Temp = np.nan
         if verbose:
-            print('Coud not parse string:', l)
+            print('Could not parse string:', l)
 
     return Temp, R, V, ID
 
@@ -655,13 +674,13 @@ def parseTemp(l,verbose=True):
                 Temp= np.nan
                 ID=np.nan
                 if verbose: 
-                    print('Coud not parse string:', l)
+                    print('Could not parse string:', l)
     
     else:
         ID= np.nan
         Temp= np.nan
         if verbose: 
-            print('Coud not parse string:', l)                 
+            print('Could not parse string:', l)                 
 
 
     return Temp,ID
@@ -685,12 +704,12 @@ def parseVBat(l,verbose=True):
         except:
                 V= np.nan
                 if verbose: 
-                    print('Coud not parse string:', l)
+                    print('Could not parse string:', l)
     
     else:
         V= np.nan
         if verbose: 
-            print('Coud not parse string:', l)               
+            print('Could not parse string:', l)               
 
     return V
 
@@ -724,7 +743,7 @@ def parseLaser(l,verbose=True):
             except:
                 h= np.nan
                 if verbose: 
-                    print('Coud not parse string:', l)
+                    print('Could not parse string:', l)
         else:
             error=0
             try:
@@ -744,13 +763,13 @@ def parseLaser(l,verbose=True):
                 error=1
             if error:
                 if verbose: 
-                    print('Coud not parse string:', l)
+                    print('Could not parse string:', l)
     else:
         h= np.nan
         signQ= np.nan
         T= np.nan 
         if verbose: 
-            print('Coud not parse string:', l)                 
+            print('Could not parse string:', l)                 
 
 
     return h,signQ,T
@@ -895,16 +914,22 @@ def gps_datetime(time_week, time_s, leap_seconds=18):
 
 def get_CalibrationStart_Stop(dataINS):
 
-    start_ind=(dataINS.Cal.On==0) * (dataINS.Cal.ID==1)
-    dataINS.Cal.Start_TOW=dataINS.Cal.TOW[start_ind]
-    dataINS.Cal.Start_Time=dataINS.Cal.Start_TOW-dataINS.TOW0
-    dataINS.Cal.Start_STMP=dataINS.Cal.TimeSTMP[start_ind]/1000
+    start_ind = (dataINS.Cal.ID == -1)
+    stop_ind = (dataINS.Cal.ID==-2)
+    if len(np.where(stop_ind)[0]) > len(np.where(start_ind)[0]):
+        start_ind = start_ind = (dataINS.Cal.On == 1) * (dataINS.Cal.ID == 1)
+        dataINS.Cal.Start_TOW = dataINS.Cal.TOW[start_ind] -3
+        dataINS.Cal.Start_Time = dataINS.Cal.Start_TOW - dataINS.TOW0 -3
+        dataINS.Cal.Start_STMP = dataINS.Cal.TimeSTMP[start_ind] / 1000 -3
+    else:
+        dataINS.Cal.Start_TOW=dataINS.Cal.TOW[start_ind]
+        dataINS.Cal.Start_Time=dataINS.Cal.Start_TOW-dataINS.TOW0
+        dataINS.Cal.Start_STMP=dataINS.Cal.TimeSTMP[start_ind]/1000
+
     
-    
-    dataINS.Cal.Stop_TOW=dataINS.Cal.TOW[(dataINS.Cal.On==0) * (dataINS.Cal.ID==2)]
+    dataINS.Cal.Stop_TOW=dataINS.Cal.TOW[stop_ind]
     dataINS.Cal.Stop_Time=dataINS.Cal.Stop_TOW-dataINS.TOW0
-    dataINS.Cal.Start_Time=dataINS.Cal.Start_TOW-dataINS.TOW0
-    dataINS.Cal.Start_STMP=dataINS.Cal.TimeSTMP[start_ind]/1000
+    dataINS.Cal.Stop_STMP=dataINS.Cal.TimeSTMP[stop_ind]/1000
 
 
 #%%  Sync Laser and GPX data from UAV
