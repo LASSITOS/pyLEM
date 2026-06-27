@@ -31,7 +31,7 @@ from dataADC import*
 filename='260612_221215'
 path= r'D:\FIeldData\Utq2026\260612'
 
-dT_start=0.97
+dT_start=-10.1
 T_max=0
 
 
